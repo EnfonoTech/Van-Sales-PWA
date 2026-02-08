@@ -5,6 +5,11 @@ app_description = "PWA for Sales"
 app_email = "ramees@enfono.com"
 app_license = "mit"
 
+# PWA entry: /pwa redirects to the built SPA
+website_redirects = [
+    {"source": "/pwa", "target": "/assets/fateh_pwa/pwa/index.html"},
+]
+
 # Apps
 # ------------------
 

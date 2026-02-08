@@ -1,0 +1,11 @@
+{
+  "name": "fateh_pwa",
+  "private": true,
+  "description": "Van Sales PWA - frontend and backend in one app",
+  "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "build:frontend": "cd frontend && npm run build",
+    "lint": "cd frontend && npm run lint"
+  }
+}
