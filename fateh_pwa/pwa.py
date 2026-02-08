@@ -8,30 +8,6 @@ from frappe import _
 from frappe.utils import getdate, flt, cint, nowdate, add_days, get_datetime
 
 
-def is_accounts_user():
-    """Check if current user has Role Profile = Accounts"""
-    user = frappe.get_doc("User", frappe.session.user)
-    return user.role_profile_name == "Accounts"
-
-
-def get_user_warehouse():
-    """
-    Get warehouse linked via User Permission for Accounts users
-    """
-    warehouse = frappe.db.get_value(
-        "User Permission",
-        {
-            "user": frappe.session.user,
-            "allow": "Warehouse"
-        },
-        "for_value"
-    )
-
-    if not warehouse:
-        frappe.throw(_("No Warehouse User Permission found for this user"))
-
-    return warehouse
-
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def login():
@@ -1824,21 +1800,6 @@ def get_sales_invoice_list():
     if start_date and end_date:
         filters["posting_date"] = ["between", [start_date, end_date]]
 
-    # 🔐 ADDITION: Accounts users see invoices only for their warehouse
-    user_doc = frappe.get_doc("User", current_user)
-    if user_doc.role_profile_name == "Accounts":
-        user_warehouse = frappe.db.get_value(
-            "User Permission",
-            {
-                "user": current_user,
-                "allow": "Warehouse"
-            },
-            "for_value"
-        )
-        if not user_warehouse:
-            frappe.throw("No Warehouse User Permission found for this user")
-        filters["set_warehouse"] = user_warehouse
-
     total_count = frappe.db.count("Sales Invoice", filters)
     invoice_names = frappe.get_all(
         "Sales Invoice",
@@ -1964,12 +1925,26 @@ def create_sales_invoice():
 
         if not company_doc.default_income_account or not company_doc.default_receivable_account:
             return {"status": "error", "message": "Company missing default accounts"}
+        if not getattr(company_doc, "default_currency", None):
+            return {"status": "error", "message": "Company missing default currency"}
 
         cost_center = _get_user_cost_center(company)
         if not cost_center:
             return {
                 "status": "error",
                 "message": "Cost Center could not be determined. Set User Permission (Cost Center) or Company default Cost Center."
+            }
+
+        # Company round-off fields (required by ERPNext on submit; validate early to avoid unpack errors)
+        round_off_account = frappe.get_cached_value("Company", company, "round_off_account")
+        round_off_cost_center = frappe.get_cached_value("Company", company, "round_off_cost_center")
+        if not round_off_account or not round_off_cost_center:
+            return {
+                "status": "error",
+                "message": (
+                    "Company must have 'Round Off Account' and 'Round Off Cost Center' set. "
+                    "Set them in the Company master to save and submit invoices."
+                )
             }
 
         # --------------------------------------------------
@@ -2006,23 +1981,70 @@ def create_sales_invoice():
             }
 
         # --------------------------------------------------
-        # WAREHOUSE
+        # WAREHOUSE – resolve from User Permission first, then request, then company defaults
         # --------------------------------------------------
-        user = frappe.get_doc("User", frappe.session.user)
+        def _get_user_warehouse(company):
+            """Get warehouse from User Permission (allow=Warehouse) for current user, preferring one that belongs to company."""
+            allowed = frappe.get_all(
+                "User Permission",
+                filters={"user": frappe.session.user, "allow": "Warehouse"},
+                pluck="for_value"
+            )
+            if not allowed:
+                return None
+            # Prefer a warehouse that belongs to this company
+            for wh in allowed:
+                if not wh or not frappe.db.exists("Warehouse", wh):
+                    continue
+                wh_company = frappe.db.get_value("Warehouse", wh, "company")
+                if wh_company == company:
+                    return wh
+            # Otherwise return first valid one (e.g. single permission)
+            for wh in allowed:
+                if wh and frappe.db.exists("Warehouse", wh):
+                    return wh
+            return None
+
+        user_warehouse = _get_user_warehouse(company)
 
         if update_stock:
-            if user.role_profile_name == "Accounts":
-                target_warehouse = frappe.db.get_value(
-                    "User Permission",
-                    {"user": frappe.session.user, "allow": "Warehouse"},
-                    "for_value"
-                )
-                if not target_warehouse:
-                    frappe.throw("No Warehouse User Permission found for this user")
-            else:
-                target_warehouse = data.get("target_warehouse") or get_default_warehouse(company)
+            target_warehouse = user_warehouse
+            if not target_warehouse:
+                req_wh = data.get("target_warehouse") or data.get("warehouse")
+                if req_wh and frappe.db.exists("Warehouse", req_wh):
+                    target_warehouse = req_wh
+            if not target_warehouse:
+                target_warehouse = get_default_warehouse(company)
+            if not target_warehouse:
+                return {
+                    "status": "error",
+                    "message": "Warehouse is required when updating stock. Set User Permission (Warehouse), pass target_warehouse, or set a default warehouse for the company."
+                }
         else:
             target_warehouse = None
+
+        # Every item must have a valid warehouse (ERPNext set_missing_values uses it for bin details).
+        warehouse_for_items = target_warehouse or user_warehouse
+        if not warehouse_for_items:
+            warehouse_for_items = get_default_warehouse(company)
+        if not warehouse_for_items:
+            warehouse_for_items = frappe.db.get_value(
+                "Warehouse", {"company": company, "is_group": 0, "disabled": 0}, "name"
+            )
+        if not warehouse_for_items:
+            warehouse_for_items = frappe.db.get_value(
+                "Warehouse", {"company": company, "disabled": 0}, "name"
+            )
+        if not warehouse_for_items:
+            return {
+                "status": "error",
+                "message": "No warehouse found for company. Create at least one Warehouse for this company."
+            }
+        if not frappe.db.exists("Warehouse", warehouse_for_items):
+            return {
+                "status": "error",
+                "message": f"Resolved warehouse '{warehouse_for_items}' does not exist. Please use a valid Warehouse."
+            }
 
         # --------------------------------------------------
         # BUILD ITEMS
@@ -2059,11 +2081,9 @@ def create_sales_invoice():
                 "stock_uom": stock_uom,
                 "conversion_factor": get_conversion_factor(item["item_code"], uom),
                 "income_account": company_doc.default_income_account,
-                "cost_center": cost_center
+                "cost_center": cost_center,
+                "warehouse": warehouse_for_items,
             }
-
-            if update_stock and target_warehouse:
-                row["warehouse"] = target_warehouse
 
             invoice_items.append(row)
 
@@ -2109,11 +2129,18 @@ def create_sales_invoice():
             "debit_to": company_doc.default_receivable_account,
             "ignore_pricing_rule": 1,
             "update_stock": update_stock,
-            "set_warehouse": target_warehouse,
+            "set_warehouse": target_warehouse or warehouse_for_items,
             "items": invoice_items,
             "taxes": tax_rows,
             "taxes_and_charges": tax_template
         })
+
+        # Ensure every item and parent have a valid warehouse before set_missing_values.
+        # ERPNext get_item_details -> update_bin_details -> get_bin_details(out.warehouse);
+        # None causes "cannot unpack non-iterable NoneType" in get_descendants_of.
+        doc.set("set_warehouse", doc.get("set_warehouse") or warehouse_for_items)
+        for item_row in doc.items:
+            item_row.set("warehouse", warehouse_for_items)
 
         # --------------------------------------------------
         # DISCOUNT
@@ -2142,8 +2169,24 @@ def create_sales_invoice():
             for payment in doc.payment_schedule:
                 payment.due_date = tomorrow_date
         
-        doc.insert(ignore_permissions=True)
-        
+        try:
+            doc.insert(ignore_permissions=True)
+        except TypeError as e:
+            if "cannot unpack non-iterable NoneType object" in str(e) or "cannot unpack" in str(e).lower():
+                frappe.log_error(
+                    title="Sales Invoice create unpack error",
+                    message=frappe.get_traceback()
+                )
+                return {
+                    "status": "error",
+                    "message": (
+                        "Server error while saving invoice. Ensure Company has: "
+                        "Default Cost Center, Round Off Account, Round Off Cost Center, Default Income Account, "
+                        "and (if updating stock) a valid Warehouse. Check Error Log for details."
+                    )
+                }
+            raise
+
         # Update payment_schedule due_dates in database directly
         if doc.payment_schedule:
             for payment in doc.payment_schedule:
@@ -2387,20 +2430,22 @@ def update_sales_invoice():
         # UPDATE WAREHOUSE (ONLY IF update_stock = 1)
         # --------------------------------------------------
         if doc.update_stock:
-            user = frappe.get_doc("User", frappe.session.user)
-
-            if user.role_profile_name == "Accounts":
-                warehouse = frappe.db.get_value(
-                    "User Permission",
-                    {"user": frappe.session.user, "allow": "Warehouse"},
-                    "for_value"
-                )
-                if not warehouse:
-                    frappe.throw("No Warehouse User Permission found")
-            else:
-                warehouse = data.get("target_warehouse") or doc.set_warehouse
-
-            doc.set_warehouse = warehouse
+            # Resolve warehouse: User Permission first, then request/doc
+            warehouse = frappe.db.get_value(
+                "User Permission",
+                {"user": frappe.session.user, "allow": "Warehouse"},
+                "for_value"
+            )
+            if warehouse and frappe.db.exists("Warehouse", warehouse):
+                wh_company = frappe.db.get_value("Warehouse", warehouse, "company")
+                if wh_company != doc.company:
+                    warehouse = None
+            if not warehouse:
+                warehouse = data.get("target_warehouse") or data.get("warehouse")
+            if not warehouse or not frappe.db.exists("Warehouse", warehouse):
+                warehouse = doc.set_warehouse
+            if warehouse:
+                doc.set_warehouse = warehouse
 
         # --------------------------------------------------
         # UPDATE ITEMS (OPTIONAL – REPLACES EXISTING ITEMS)
@@ -4371,36 +4416,14 @@ def get_sales_return_details():
 @frappe.whitelist(allow_guest=False, methods=["GET"])
 def get_sales_returns_list():
     """
-    Get list of Sales Returns restricted by logged-in user.
-
-    - Accounts users → warehouse-based restriction
-    - Others → owner-based restriction
+    Get list of Sales Returns restricted to records owned by the logged-in user.
     """
 
     try:
         filters = {"is_return": 1}
 
-        user = frappe.get_doc("User", frappe.session.user)
-
-        # --------------------------------
-        # 🔐 USER-BASED RESTRICTION
-        # --------------------------------
-        if user.role_profile_name == "Accounts":
-            warehouse = frappe.db.get_value(
-                "User Permission",
-                {
-                    "user": frappe.session.user,
-                    "allow": "Warehouse"
-                },
-                "for_value"
-            )
-
-            if not warehouse:
-                frappe.throw("No Warehouse User Permission found for this user")
-
-            filters["set_warehouse"] = warehouse
-        else:
-            filters["owner"] = frappe.session.user
+        # Restrict to current user's records
+        filters["owner"] = frappe.session.user
 
         # --------------------------------
         # OPTIONAL FILTERS

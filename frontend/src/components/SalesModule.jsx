@@ -749,7 +749,6 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
       customerId: customer.id,
       date: today,
       dueDate: today, // Can be calculated later
-      warehouse: 'Finished Goods - SRT', // Default, should be selectable
       items: formattedItems,
       subtotal: calculateSubtotal(),
       discount: calculateDiscount(),
@@ -766,7 +765,6 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         // Update existing invoice
         const minimalUpdate = {
           invoice_name: editingInvoice,
-          warehouse: invoiceData.warehouse,
           discount_amount: invoiceData.discount_amount,
           items: formattedItems
         };
