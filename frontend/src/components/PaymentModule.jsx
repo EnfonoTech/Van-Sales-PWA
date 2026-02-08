@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { Plus, Search, Loader2, X } from 'lucide-react';
 import SARSymbol from './SARSymbol';
-import { createPaymentEntry, getOutstandingInvoicesForPayment, getPaymentEntryDetails } from '../services/api';
+import { createPaymentEntry, getOutstandingInvoicesForPayment, getPaymentEntryDetails, getPaymentMethods } from '../services/api';
 import { Trash2 } from 'lucide-react';
 
 function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustomers, loadingPayments, loadingSales }) {
@@ -70,6 +70,17 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
   const [submitting, setSubmitting] = useState(false);
   const [selectedInvoices, setSelectedInvoices] = useState([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState([]);
+
+  // Fetch enabled payment methods (Mode of Payment) for user's company
+  useEffect(() => {
+    getPaymentMethods().then((list) => {
+      if (Array.isArray(list) && list.length > 0) {
+        setPaymentMethods(list);
+        setFormData(prev => ({ ...prev, paymentMethod: prev.paymentMethod && list.includes(prev.paymentMethod) ? prev.paymentMethod : list[0] }));
+      }
+    }).catch(() => setPaymentMethods([]));
+  }, []);
 
   // Fetch outstanding invoices when customer is selected
   useEffect(() => {
@@ -185,11 +196,11 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
         paymentEntry: response.name || response.payment_entry
       });
 
-      // Reset form
+      // Reset form (use first available payment method if list loaded)
       setFormData({
         customerId: '',
         amount: '',
-        paymentMethod: 'Cash',
+        paymentMethod: paymentMethods.length ? paymentMethods[0] : 'Cash',
         paymentDate: new Date().toISOString().split('T')[0],
         reference: '',
         notes: ''
@@ -433,10 +444,11 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
                   onChange={handleChange}
                   required
                 >
-                  <option value="Cash">Cash</option>
-                  <option value="POS Machine">POS Machine</option>
-                  <option value="Bank Transfer">Bank Transfer</option>
-                  <option value="SHABAKA">SHABAKA</option>
+                  {paymentMethods.length > 0 ? (
+                    paymentMethods.map((m) => <option key={m} value={m}>{m}</option>)
+                  ) : (
+                    <option value="Cash">Cash</option>
+                  )}
                 </select>
               </div>
 

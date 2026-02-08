@@ -2756,19 +2756,55 @@ def submit_sales_invoice():
 
 
 @frappe.whitelist(allow_guest=False, methods=["GET"])
+def get_mode_of_payment_list():
+    """
+    Return list of enabled Mode of Payment that have an account for the user's company.
+    Used by Collect Payment to show only valid payment methods (no hardcoding).
+    """
+    try:
+        company = _get_user_company()
+        if not company:
+            return {"status": "success", "data": []}
+        # Mode of Payment that have an account for this company
+        mop_names = frappe.get_all(
+            "Mode of Payment Account",
+            filters={"company": company},
+            pluck="parent"
+        )
+        if not mop_names:
+            return {"status": "success", "data": []}
+        enabled = frappe.get_all(
+            "Mode of Payment",
+            filters={"name": ["in", list(set(mop_names))], "enabled": 1},
+            fields=["name"],
+            order_by="name"
+        )
+        return {
+            "status": "success",
+            "data": [r["name"] for r in enabled]
+        }
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Get Mode of Payment List Error")
+        return {"status": "error", "message": str(e), "data": []}
+
+
+@frappe.whitelist(allow_guest=False, methods=["GET"])
 def get_payment_entries_list():
     """
     API to list payment entries.
     Draft and Submitted included.
     Cancelled excluded.
-    Restricted to logged-in user.
+    Restricted to logged-in user and user's company (no hardcoded company).
     """
 
     try:
+        company = _get_user_company()
         filters = {
             "docstatus": ["!=", 2],   # Exclude Cancelled
             "owner": frappe.session.user  # 🔐 USER RESTRICTION
         }
+        if company:
+            filters["company"] = company
 
         party = frappe.form_dict.get("party")
         if party:

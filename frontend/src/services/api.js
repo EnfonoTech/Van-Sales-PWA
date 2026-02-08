@@ -2077,32 +2077,21 @@ export const getStockBalanceComplete = async (filters = {}) => {
 };
 
 /**
- * Get payment methods from backend config
- * @returns {Promise<Array>} Array of available payment methods
+ * Get payment methods (enabled Mode of Payment with account for user's company) from backend.
+ * @returns {Promise<Array<string>>} Array of mode of payment names
  */
 export const getPaymentMethods = async () => {
   try {
-    // Endpoint not available in Postman collection - using defaults
-    return [
-      'Cash',
-      'Credit',
-      'POS SHABAKA',
-      'Salla Wallet',
-      'Bank Transfer (NCB)',
-      'Bank Transfer (Alrajhi)',
-      'Bank Transfer (Alinma)'
-    ];
+    const response = await apiRequest('/method/fateh_pwa.pwa.get_mode_of_payment_list', { method: 'GET' });
+    const msg = response?.message;
+    if (msg?.data && Array.isArray(msg.data) && msg.data.length > 0) {
+      return msg.data;
+    }
+    if (Array.isArray(msg)) return msg;
+    return [];
   } catch (error) {
-    // Default payment methods if API fails
-    return [
-      'Cash',
-      'Credit',
-      'POS SHABAKA',
-      'Salla Wallet',
-      'Bank Transfer (NCB)',
-      'Bank Transfer (Alrajhi)',
-      'Bank Transfer (Alinma)'
-    ];
+    console.warn('getPaymentMethods failed:', error);
+    return [];
   }
 };
 
