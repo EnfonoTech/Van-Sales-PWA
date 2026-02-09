@@ -137,6 +137,31 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
     }
   }, [location.state, sales]);
 
+  // Handle name query parameter to show detail view
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const nameParam = params.get('name');
+    if (nameParam && nameParam !== selectedInvoice?.name && nameParam !== selectedInvoice?.id) {
+      setLoadingDetails(true);
+      getInvoiceDetails(nameParam)
+        .then((details) => {
+          const saleObj = {
+            id: nameParam,
+            name: nameParam,
+            invoice_name: nameParam,
+            ...details
+          };
+          setSelectedInvoice(saleObj);
+          setInvoiceDetails(details);
+          setView('detail');
+        })
+        .catch(() => {
+          // If error, stay on list view
+        })
+        .finally(() => setLoadingDetails(false));
+    }
+  }, [location.search]);
+
   // Filter customers based on search query
   useEffect(() => {
     if (customerSearch.trim()) {
@@ -1439,25 +1464,27 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                   </div>
                 </div>
                 <div className="text-right">
-                  <div style={{ marginBottom: '12px' }}>
-                    <button 
-                      className="btn btn-primary btn-sm"
-                      onClick={() => {
-                        // Use pdf_url from API if available, otherwise fallback to window.print()
-                        const pdfUrl = invoice.pdf_url;
-                        if (pdfUrl) {
-                          // Open PDF in new tab for download/viewing
-                          window.open(pdfUrl, '_blank');
-                        } else {
-                          // Fallback to printing current page
-                          window.print();
-                        }
-                      }}
-                      title={invoice.pdf_url ? 'Open PDF invoice' : 'Print invoice'}
-                    >
-                      🖨️ Print Invoice
-                    </button>
-                  </div>
+                  {invoice.docstatus === 1 && invoice.pdf_url && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <button 
+                        className="btn btn-primary btn-sm"
+                        onClick={() => {
+                          // Use pdf_url from API if available, otherwise fallback to window.print()
+                          const pdfUrl = invoice.pdf_url ?? invoice.data?.pdf_url;
+                          if (pdfUrl) {
+                            // Open PDF in new tab for download/viewing
+                            window.open(pdfUrl, '_blank');
+                          } else {
+                            // Fallback to printing current page
+                            window.print();
+                          }
+                        }}
+                        title="Open PDF invoice"
+                      >
+                        🖨️ Print Invoice
+                      </button>
+                    </div>
+                  )}
                   <div className="text-sm text-gray-600">Date</div>
                   <div className="font-semibold">{formatDate(invoice.date || invoice.posting_date)}</div>
                   {invoice.dueDate && (

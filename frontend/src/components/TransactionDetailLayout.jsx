@@ -9,6 +9,7 @@ export function TransactionDetailLayout({
   title = 'Details',
   docName,
   status,
+  docstatus,
   dateLabel = 'Date',
   dateValue,
   dueDateLabel,
@@ -50,7 +51,7 @@ export function TransactionDetailLayout({
               </div>
             </div>
             <div className="text-right">
-              {pdfUrl && (
+              {pdfUrl && docstatus === 1 && (
                 <div style={{ marginBottom: '12px' }}>
                   <button
                     type="button"

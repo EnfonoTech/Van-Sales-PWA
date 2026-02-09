@@ -1,13 +1,16 @@
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Search, Loader2, Check } from 'lucide-react';
 import {
   getSalesOrderList,
   getSalesOrderDetails,
   createSalesOrder,
+  updateSalesOrder,
   submitSalesOrder,
   getItemDetails,
   searchItems,
+  convertSalesOrderToSalesInvoice,
 } from '../services/api';
 import SARSymbol from './SARSymbol';
 import TransactionFormLayout from './TransactionFormLayout';
@@ -17,6 +20,8 @@ const sanitizeDecimalInput = (value = '') => value.replace(/[^0-9.]/g, '');
 const sanitizeIntegerInput = (value = '') => value.replace(/[^0-9]/g, '');
 
 function SalesOrderModule({ customers = [], items = [] }) {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [view, setView] = useState('list');
   const [salesOrders, setSalesOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +50,8 @@ function SalesOrderModule({ customers = [], items = [] }) {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submittingSalesOrder, setSubmittingSalesOrder] = useState(false);
+  const [convertingToSalesInvoice, setConvertingToSalesInvoice] = useState(false);
+  const [editingSalesOrder, setEditingSalesOrder] = useState(null);
 
   const getPriceValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) >= 0 ? parseFloat(v) : 0);
   const getQuantityValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) > 0 ? parseFloat(v) : 1);
@@ -70,6 +77,26 @@ function SalesOrderModule({ customers = [], items = [] }) {
   };
 
   useEffect(() => { fetchList(); }, []);
+
+  // Handle name query parameter to show detail view
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const nameParam = params.get('name');
+    if (nameParam && nameParam !== selectedOrder?.name) {
+      setLoadingDetail(true);
+      getSalesOrderDetails(nameParam)
+        .then((result) => {
+          const doc = result.sales_order || result;
+          setSelectedOrder({ name: nameParam });
+          setOrderDetail(doc);
+          setView('detail');
+        })
+        .catch(() => {
+          // If error, stay on list view
+        })
+        .finally(() => setLoadingDetail(false));
+    }
+  }, [location.search]);
 
   useEffect(() => {
     const term = listSearch.trim();
@@ -278,6 +305,60 @@ function SalesOrderModule({ customers = [], items = [] }) {
     }
   };
 
+  const handleEditSalesOrder = async () => {
+    const doc = orderDetail || selectedOrder;
+    if (!doc?.name) {
+      alert('No sales order selected');
+      return;
+    }
+    if (doc.docstatus !== 0) {
+      alert('Only Draft sales orders can be edited');
+      return;
+    }
+    setLoadingDetail(true);
+    try {
+      const details = await getSalesOrderDetails(doc.name);
+      const orderDoc = details.sales_order || details;
+      
+      // Map items into form structure
+      const itemsForForm = (orderDoc.items || []).map(item => ({
+        code: item.item_code || item.code,
+        name: item.item_name || item.name,
+        price: (item.rate || item.price || 0).toString(),
+        uom: item.uom || item.sales_uom || item.stock_uom || 'Nos',
+        stock_uom: item.stock_uom || 'Nos',
+        sales_uom: item.sales_uom || item.stock_uom || 'Nos',
+        uom_conversions: item.uom_conversions || [],
+        quantity: (item.qty || item.quantity || 1).toString(),
+        originalPrice: item.price_list_rate || item.rate || item.price || 0
+      }));
+      
+      // Set customer selection
+      const foundCustomer = customers.find(c => c.name === orderDoc.customer || c.name === orderDoc.customer_name);
+      if (foundCustomer) {
+        setSelectedCustomer(foundCustomer.id);
+        setCustomerSearch(foundCustomer.custom_customer_name_english || foundCustomer.name);
+      } else {
+        setSelectedCustomer('');
+        setCustomerSearch(orderDoc.customer_name || orderDoc.customer || '');
+      }
+      
+      setLineItems(itemsForForm);
+      setDiscountAmount((orderDoc.discount_amount || 0).toString());
+      if (orderDoc.delivery_date) {
+        setDeliveryDate(new Date(orderDoc.delivery_date).toISOString().split('T')[0]);
+      }
+      
+      setEditingSalesOrder(doc.name);
+      setView('create');
+    } catch (error) {
+      console.error('Error loading sales order for editing:', error);
+      alert(`Error loading sales order for editing: ${error.message || 'Unknown error'}`);
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
+
   const handleSubmitSalesOrder = async () => {
     const doc = orderDetail || selectedOrder;
     if (!doc?.name) return;
@@ -292,6 +373,31 @@ function SalesOrderModule({ customers = [], items = [] }) {
       alert(err.message || 'Failed to submit sales order');
     } finally {
       setSubmittingSalesOrder(false);
+    }
+  };
+
+  const handleConvertToSalesInvoice = async () => {
+    const doc = orderDetail || selectedOrder;
+    if (!doc?.name) return;
+    if (doc.docstatus !== 1) {
+      alert('Only submitted sales orders can be converted to Sales Invoice');
+      return;
+    }
+    if (!confirm('Create a Sales Invoice from this Sales Order?')) return;
+    setConvertingToSalesInvoice(true);
+    try {
+      const result = await convertSalesOrderToSalesInvoice(doc.name);
+      const salesInvoiceName = result.name;
+      if (salesInvoiceName) {
+        // Navigate to Sales Invoice detail view
+        navigate(`/sales?name=${salesInvoiceName}`);
+      } else {
+        alert('Sales Invoice created but name not returned');
+      }
+    } catch (err) {
+      alert(err.message || 'Failed to convert sales order to sales invoice');
+    } finally {
+      setConvertingToSalesInvoice(false);
     }
   };
 
@@ -315,12 +421,30 @@ function SalesOrderModule({ customers = [], items = [] }) {
         rate: getPriceValue(i.price),
         uom: i.uom || i.stock_uom || 'Nos',
       }));
-      const result = await createSalesOrder({
-        customer: customer.name,
-        items: formattedItems,
-        delivery_date: deliveryDate || undefined,
-      });
-      const orderName = result.name || result.message?.name;
+      
+      let result;
+      let orderName;
+      
+      if (editingSalesOrder) {
+        // Update existing sales order
+        result = await updateSalesOrder({
+          sales_order_name: editingSalesOrder,
+          customer: customer.name,
+          items: formattedItems,
+          delivery_date: deliveryDate || undefined,
+          discount_amount: getDiscountValue(discountAmount),
+        });
+        orderName = editingSalesOrder;
+      } else {
+        // Create new sales order
+        result = await createSalesOrder({
+          customer: customer.name,
+          items: formattedItems,
+          delivery_date: deliveryDate || undefined,
+        });
+        orderName = result.name || result.message?.name;
+      }
+      
       if (orderName) {
         // Fetch details and show detail view so user can submit and print
         const detail = await getSalesOrderDetails(orderName);
@@ -332,12 +456,13 @@ function SalesOrderModule({ customers = [], items = [] }) {
         setView('list');
         fetchList();
       }
-      // Clear form after successful create
+      // Clear form after successful create/update
       setSelectedCustomer('');
       setCustomerSearch('');
       setLineItems([]);
       setDiscountAmount('0');
       setDeliveryDate(new Date().toISOString().split('T')[0]);
+      setEditingSalesOrder(null);
     } catch (err) {
       alert(err.message || 'Failed to create sales order');
     } finally {
@@ -351,33 +476,67 @@ function SalesOrderModule({ customers = [], items = [] }) {
   if (view === 'detail') {
     const doc = orderDetail || selectedOrder;
     const isDraft = doc?.docstatus === 0 || doc?.status === 'Draft' || !doc?.docstatus;
-    const extraActions = isDraft ? (
-      <div style={{ marginBottom: 12 }}>
-        <button
-          type="button"
-          className="btn btn-success btn-sm"
-          onClick={handleSubmitSalesOrder}
-          disabled={submittingSalesOrder}
-        >
-          {submittingSalesOrder ? (
-            <>
-              <Loader2 size={16} className="animate-spin" />
-              Submitting...
-            </>
-          ) : (
-            <>
-              <Check size={16} />
-              Submit Order
-            </>
-          )}
-        </button>
+    const isSubmitted = doc?.docstatus === 1;
+    const extraActions = (
+      <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {isDraft && (
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={handleEditSalesOrder}
+              disabled={loadingDetail}
+            >
+              Edit Order
+            </button>
+            <button
+              type="button"
+              className="btn btn-success btn-sm"
+              onClick={handleSubmitSalesOrder}
+              disabled={submittingSalesOrder}
+            >
+              {submittingSalesOrder ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Submitting...
+                </>
+              ) : (
+                <>
+                  <Check size={16} />
+                  Submit Order
+                </>
+              )}
+            </button>
+          </>
+        )}
+        {isSubmitted && (
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={handleConvertToSalesInvoice}
+            disabled={convertingToSalesInvoice}
+          >
+            {convertingToSalesInvoice ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Converting...
+              </>
+            ) : (
+              <>
+                <Check size={16} />
+                Create Sales Invoice
+              </>
+            )}
+          </button>
+        )}
       </div>
-    ) : null;
+    );
     return (
       <TransactionDetailLayout
         title="Sales Order Details"
         docName={doc?.name}
         status={doc?.status || (doc?.docstatus === 1 ? 'Submitted' : 'Draft')}
+        docstatus={doc?.docstatus}
         dateLabel="Order Date"
         dateValue={doc?.transaction_date}
         dueDateLabel="Delivery Date"
@@ -517,9 +676,9 @@ function SalesOrderModule({ customers = [], items = [] }) {
 
     return (
       <TransactionFormLayout
-        title="New Sales Order"
+        title={editingSalesOrder ? `Edit Sales Order ${editingSalesOrder}` : "New Sales Order"}
         backLabel="Back to Sales Orders"
-        onBack={() => { setView('list'); setLineItems([]); setSelectedCustomer(''); setCustomerSearch(''); setDiscountAmount('0'); setDeliveryDate(new Date().toISOString().split('T')[0]); }}
+        onBack={() => { setView('list'); setLineItems([]); setSelectedCustomer(''); setCustomerSearch(''); setDiscountAmount('0'); setDeliveryDate(new Date().toISOString().split('T')[0]); setEditingSalesOrder(null); }}
         partySelection={partySelection}
         addItemsSection={addItemsSection}
         lineItems={lineItems}

@@ -1,15 +1,18 @@
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Search, Loader2, Check } from 'lucide-react';
 import {
   getQuotationList,
   getQuotationDetails,
   createQuotation,
+  updateQuotation,
   submitQuotation,
   getLeadList,
   createLead,
   getItemDetails,
   searchItems,
+  convertQuotationToSalesOrder,
 } from '../services/api';
 import SARSymbol from './SARSymbol';
 import TransactionFormLayout from './TransactionFormLayout';
@@ -19,6 +22,8 @@ const sanitizeDecimalInput = (value = '') => value.replace(/[^0-9.]/g, '');
 const sanitizeIntegerInput = (value = '') => value.replace(/[^0-9]/g, '');
 
 function QuotationModule({ customers = [], items = [] }) {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [view, setView] = useState('list');
   const [quotations, setQuotations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -50,6 +55,8 @@ function QuotationModule({ customers = [], items = [] }) {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submittingQuotation, setSubmittingQuotation] = useState(false);
+  const [convertingToSalesOrder, setConvertingToSalesOrder] = useState(false);
+  const [editingQuotation, setEditingQuotation] = useState(null);
   const [showQuickLeadForm, setShowQuickLeadForm] = useState(false);
   const [quickLeadFormData, setQuickLeadFormData] = useState({
     first_name: '',
@@ -90,6 +97,26 @@ function QuotationModule({ customers = [], items = [] }) {
   };
 
   useEffect(() => { fetchList(); }, []);
+
+  // Handle name query parameter to show detail view
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const nameParam = params.get('name');
+    if (nameParam && nameParam !== selectedQuotation?.name) {
+      setLoadingDetail(true);
+      getQuotationDetails(nameParam)
+        .then((result) => {
+          const doc = result.quotation || result;
+          setSelectedQuotation({ name: nameParam });
+          setQuotationDetail(doc);
+          setView('detail');
+        })
+        .catch(() => {
+          // If error, stay on list view
+        })
+        .finally(() => setLoadingDetail(false));
+    }
+  }, [location.search]);
 
   useEffect(() => {
     if (quotationTo === 'Lead') {
@@ -339,6 +366,90 @@ function QuotationModule({ customers = [], items = [] }) {
     }
   };
 
+  const handleEditQuotation = async () => {
+    const doc = quotationDetail || selectedQuotation;
+    if (!doc?.name) {
+      alert('No quotation selected');
+      return;
+    }
+    if (doc.docstatus !== 0) {
+      alert('Only Draft quotations can be edited');
+      return;
+    }
+    setLoadingDetail(true);
+    try {
+      const details = await getQuotationDetails(doc.name);
+      const quotationDoc = details.quotation || details;
+      
+      // Map items into form structure
+      const itemsForForm = (quotationDoc.items || []).map(item => ({
+        code: item.item_code || item.code,
+        name: item.item_name || item.name,
+        price: (item.rate || item.price || 0).toString(),
+        uom: item.uom || item.sales_uom || item.stock_uom || 'Nos',
+        stock_uom: item.stock_uom || 'Nos',
+        sales_uom: item.sales_uom || item.stock_uom || 'Nos',
+        uom_conversions: item.uom_conversions || [],
+        quantity: (item.qty || item.quantity || 1).toString(),
+        originalPrice: item.price_list_rate || item.rate || item.price || 0
+      }));
+      
+      // Set party selection
+      setQuotationTo(quotationDoc.quotation_to || 'Customer');
+      if (quotationDoc.quotation_to === 'Customer') {
+        const foundCustomer = customers.find(c => c.name === quotationDoc.party_name || c.name === quotationDoc.customer_name);
+        if (foundCustomer) {
+          setSelectedCustomer(foundCustomer.id);
+          setPartySearch(foundCustomer.custom_customer_name_english || foundCustomer.name);
+        } else {
+          setSelectedCustomer('');
+          setPartySearch(quotationDoc.customer_name || quotationDoc.party_name || '');
+        }
+        setSelectedLeadName('');
+      } else {
+        setSelectedLeadName(quotationDoc.party_name || '');
+        setPartySearch(quotationDoc.party_name || '');
+        setSelectedCustomer('');
+      }
+      
+      setLineItems(itemsForForm);
+      setDiscountAmount((quotationDoc.discount_amount || 0).toString());
+      
+      setEditingQuotation(doc.name);
+      setView('create');
+    } catch (error) {
+      console.error('Error loading quotation for editing:', error);
+      alert(`Error loading quotation for editing: ${error.message || 'Unknown error'}`);
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
+
+  const handleConvertToSalesOrder = async () => {
+    const doc = quotationDetail || selectedQuotation;
+    if (!doc?.name) return;
+    if (doc.docstatus !== 1) {
+      alert('Only submitted quotations can be converted to Sales Order');
+      return;
+    }
+    if (!confirm('Create a Sales Order from this Quotation?')) return;
+    setConvertingToSalesOrder(true);
+    try {
+      const result = await convertQuotationToSalesOrder(doc.name);
+      const salesOrderName = result.name;
+      if (salesOrderName) {
+        // Navigate to Sales Order detail view
+        navigate(`/sales-orders?name=${salesOrderName}`);
+      } else {
+        alert('Sales Order created but name not returned');
+      }
+    } catch (err) {
+      alert(err.message || 'Failed to convert quotation to sales order');
+    } finally {
+      setConvertingToSalesOrder(false);
+    }
+  };
+
   const handleCreateQuickLead = async (e) => {
     if (e && e.preventDefault) {
       e.preventDefault();
@@ -396,12 +507,30 @@ function QuotationModule({ customers = [], items = [] }) {
         rate: getPriceValue(i.price),
         uom: i.uom || i.stock_uom || 'Nos',
       }));
-      const result = await createQuotation({
-        quotation_to: quotationTo,
-        party_name: partyNameForApi,
-        items: formattedItems,
-      });
-      const quotationName = result.name || result.message?.name;
+      
+      let result;
+      let quotationName;
+      
+      if (editingQuotation) {
+        // Update existing quotation
+        result = await updateQuotation({
+          quotation_name: editingQuotation,
+          quotation_to: quotationTo,
+          party_name: partyNameForApi,
+          items: formattedItems,
+          discount_amount: getDiscountValue(discountAmount),
+        });
+        quotationName = editingQuotation;
+      } else {
+        // Create new quotation
+        result = await createQuotation({
+          quotation_to: quotationTo,
+          party_name: partyNameForApi,
+          items: formattedItems,
+        });
+        quotationName = result.name || result.message?.name;
+      }
+      
       if (quotationName) {
         // Fetch details and show detail view so user can submit and print
         const detail = await getQuotationDetails(quotationName);
@@ -413,13 +542,14 @@ function QuotationModule({ customers = [], items = [] }) {
         setView('list');
         fetchList();
       }
-      // Clear form after successful create
+      // Clear form after successful create/update
       setQuotationTo('Customer');
       setSelectedCustomer('');
       setSelectedLeadName('');
       setPartySearch('');
       setLineItems([]);
       setDiscountAmount('0');
+      setEditingQuotation(null);
     } catch (err) {
       alert(err.message || 'Failed to create quotation');
     } finally {
@@ -433,33 +563,67 @@ function QuotationModule({ customers = [], items = [] }) {
   if (view === 'detail') {
     const doc = quotationDetail || selectedQuotation;
     const isDraft = doc?.docstatus === 0 || doc?.status === 'Draft' || !doc?.docstatus;
-    const extraActions = isDraft ? (
-      <div style={{ marginBottom: 12 }}>
-        <button
-          type="button"
-          className="btn btn-success btn-sm"
-          onClick={handleSubmitQuotation}
-          disabled={submittingQuotation}
-        >
-          {submittingQuotation ? (
-            <>
-              <Loader2 size={16} className="animate-spin" />
-              Submitting...
-            </>
-          ) : (
-            <>
-              <Check size={16} />
-              Submit Quotation
-            </>
-          )}
-        </button>
+    const isSubmitted = doc?.docstatus === 1;
+    const extraActions = (
+      <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {isDraft && (
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={handleEditQuotation}
+              disabled={loadingDetail}
+            >
+              Edit Quotation
+            </button>
+            <button
+              type="button"
+              className="btn btn-success btn-sm"
+              onClick={handleSubmitQuotation}
+              disabled={submittingQuotation}
+            >
+              {submittingQuotation ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Submitting...
+                </>
+              ) : (
+                <>
+                  <Check size={16} />
+                  Submit Quotation
+                </>
+              )}
+            </button>
+          </>
+        )}
+        {isSubmitted && (
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={handleConvertToSalesOrder}
+            disabled={convertingToSalesOrder}
+          >
+            {convertingToSalesOrder ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Converting...
+              </>
+            ) : (
+              <>
+                <Check size={16} />
+                Create Sales Order
+              </>
+            )}
+          </button>
+        )}
       </div>
-    ) : null;
+    );
     return (
       <TransactionDetailLayout
         title="Quotation Details"
         docName={doc?.name}
         status={doc?.status || (doc?.docstatus === 1 ? 'Submitted' : 'Draft')}
+        docstatus={doc?.docstatus}
         dateLabel="Date"
         dateValue={doc?.transaction_date}
         dueDateLabel="Valid Till"
@@ -749,9 +913,9 @@ function QuotationModule({ customers = [], items = [] }) {
 
     return (
       <TransactionFormLayout
-        title="New Quotation"
+        title={editingQuotation ? `Edit Quotation ${editingQuotation}` : "New Quotation"}
         backLabel="Back to Quotations"
-        onBack={() => { setView('list'); setLineItems([]); setSelectedCustomer(''); setSelectedLeadName(''); setPartySearch(''); setQuotationTo('Customer'); setDiscountAmount('0'); }}
+        onBack={() => { setView('list'); setLineItems([]); setSelectedCustomer(''); setSelectedLeadName(''); setPartySearch(''); setQuotationTo('Customer'); setDiscountAmount('0'); setEditingQuotation(null); }}
         partySelection={partySelection}
         addItemsSection={addItemsSection}
         lineItems={lineItems}

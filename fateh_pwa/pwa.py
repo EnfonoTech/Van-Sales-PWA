@@ -2232,6 +2232,225 @@ def submit_sales_order():
         return {"status": "error", "message": str(e) or "Failed to submit sales order"}
 
 
+@frappe.whitelist(allow_guest=False, methods=["POST"])
+def convert_quotation_to_sales_order():
+    """Convert a submitted Quotation to a Sales Order using ERPNext's conversion logic."""
+    try:
+        name = frappe.form_dict.get("name")
+        if frappe.request.data:
+            data = json.loads(frappe.request.data)
+            name = data.get("name") or name
+        
+        if not name or not frappe.db.exists("Quotation", name):
+            return {"status": "error", "message": "Quotation not found"}
+        
+        quotation = frappe.get_doc("Quotation", name)
+        
+        # Check if quotation is submitted
+        if quotation.docstatus != 1:
+            return {"status": "error", "message": "Only submitted quotations can be converted to Sales Order"}
+        
+        # Import ERPNext's conversion function
+        from erpnext.selling.doctype.quotation.quotation import make_sales_order
+        
+        # Create Sales Order from Quotation
+        sales_order = make_sales_order(name)
+        
+        # Set delivery_date to today if not already set
+        if not sales_order.delivery_date:
+            sales_order.delivery_date = nowdate()
+        
+        # Save the Sales Order
+        sales_order.insert(ignore_permissions=False)
+        sales_order.save()
+        
+        return {
+            "status": "ok",
+            "message": "Sales Order created from Quotation",
+            "name": sales_order.name,
+            "quotation_name": name
+        }
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Convert Quotation to Sales Order PWA Error")
+        return {"status": "error", "message": str(e) or "Failed to convert quotation to sales order"}
+
+
+@frappe.whitelist(allow_guest=False, methods=["POST"])
+def convert_sales_order_to_sales_invoice():
+    """Convert a submitted Sales Order to a Sales Invoice using ERPNext's conversion logic."""
+    try:
+        name = frappe.form_dict.get("name")
+        if frappe.request.data:
+            data = json.loads(frappe.request.data)
+            name = data.get("name") or name
+        
+        if not name or not frappe.db.exists("Sales Order", name):
+            return {"status": "error", "message": "Sales Order not found"}
+        
+        sales_order = frappe.get_doc("Sales Order", name)
+        
+        # Check if sales order is submitted
+        if sales_order.docstatus != 1:
+            return {"status": "error", "message": "Only submitted sales orders can be converted to Sales Invoice"}
+        
+        # Import ERPNext's conversion function
+        from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
+        
+        # Create Sales Invoice from Sales Order
+        sales_invoice = make_sales_invoice(name)
+        
+        # Save the Sales Invoice
+        sales_invoice.insert(ignore_permissions=False)
+        sales_invoice.save()
+        
+        return {
+            "status": "ok",
+            "message": "Sales Invoice created from Sales Order",
+            "name": sales_invoice.name,
+            "sales_order_name": name
+        }
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Convert Sales Order to Sales Invoice PWA Error")
+        return {"status": "error", "message": str(e) or "Failed to convert sales order to sales invoice"}
+
+
+@frappe.whitelist(allow_guest=False, methods=["POST"])
+def update_quotation():
+    """Update an EXISTING Quotation (Draft only)."""
+    try:
+        data = json.loads(frappe.request.data) if frappe.request.data else frappe.form_dict
+        
+        quotation_name = data.get("quotation_name") or data.get("name")
+        if not quotation_name:
+            return {"status": "error", "message": "'quotation_name' or 'name' is required"}
+        
+        if not frappe.db.exists("Quotation", quotation_name):
+            return {"status": "error", "message": f"Quotation '{quotation_name}' not found"}
+        
+        doc = frappe.get_doc("Quotation", quotation_name)
+        
+        if doc.docstatus != 0:
+            return {"status": "error", "message": "Only Draft Quotations can be updated"}
+        
+        # Update party (Customer or Lead)
+        if data.get("quotation_to"):
+            if data.get("quotation_to") not in ("Lead", "Customer"):
+                return {"status": "error", "message": "quotation_to must be Lead or Customer"}
+            doc.quotation_to = data.get("quotation_to")
+        
+        if data.get("party_name"):
+            party_name = data.get("party_name").strip()
+            if doc.quotation_to == "Customer":
+                if not frappe.db.exists("Customer", party_name):
+                    return {"status": "error", "message": f"Customer '{party_name}' not found"}
+            elif doc.quotation_to == "Lead":
+                if not frappe.db.exists("Lead", party_name):
+                    return {"status": "error", "message": f"Lead '{party_name}' not found"}
+            doc.party_name = party_name
+        
+        # Update items
+        if data.get("items"):
+            doc.set("items", [])
+            for item in data.get("items"):
+                if not item.get("item_code"):
+                    continue
+                doc.append("items", {
+                    "item_code": item.get("item_code"),
+                    "qty": flt(item.get("qty", 1)),
+                    "rate": flt(item.get("rate", 0)),
+                    "uom": item.get("uom", "Nos"),
+                })
+        
+        # Update discount
+        if "discount_amount" in data:
+            doc.discount_amount = flt(data.get("discount_amount"))
+        
+        # Update dates
+        if data.get("transaction_date"):
+            doc.transaction_date = data.get("transaction_date")
+        if data.get("valid_till"):
+            doc.valid_till = data.get("valid_till")
+        
+        doc.run_method("set_taxes")
+        doc.run_method("calculate_totals")
+        doc.save(ignore_permissions=True)
+        frappe.db.commit()
+        
+        return {
+            "status": "ok",
+            "message": f"Quotation '{doc.name}' updated successfully",
+            "name": doc.name
+        }
+    except Exception as e:
+        frappe.db.rollback()
+        frappe.log_error(frappe.get_traceback(), "Update Quotation PWA Error")
+        return {"status": "error", "message": str(e) or "Failed to update quotation"}
+
+
+@frappe.whitelist(allow_guest=False, methods=["POST"])
+def update_sales_order():
+    """Update an EXISTING Sales Order (Draft only)."""
+    try:
+        data = json.loads(frappe.request.data) if frappe.request.data else frappe.form_dict
+        
+        sales_order_name = data.get("sales_order_name") or data.get("name")
+        if not sales_order_name:
+            return {"status": "error", "message": "'sales_order_name' or 'name' is required"}
+        
+        if not frappe.db.exists("Sales Order", sales_order_name):
+            return {"status": "error", "message": f"Sales Order '{sales_order_name}' not found"}
+        
+        doc = frappe.get_doc("Sales Order", sales_order_name)
+        
+        if doc.docstatus != 0:
+            return {"status": "error", "message": "Only Draft Sales Orders can be updated"}
+        
+        # Update customer
+        if data.get("customer") or data.get("customer_name"):
+            customer_param = data.get("customer") or data.get("customer_name")
+            if not frappe.db.exists("Customer", customer_param):
+                return {"status": "error", "message": f"Customer '{customer_param}' not found"}
+            doc.customer = customer_param
+        
+        # Update items
+        if data.get("items"):
+            doc.set("items", [])
+            for item in data.get("items"):
+                if not item.get("item_code"):
+                    continue
+                doc.append("items", {
+                    "item_code": item.get("item_code"),
+                    "qty": flt(item.get("qty", 1)),
+                    "rate": flt(item.get("rate", 0)),
+                    "uom": item.get("uom", "Nos"),
+                })
+        
+        # Update discount
+        if "discount_amount" in data:
+            doc.discount_amount = flt(data.get("discount_amount"))
+        
+        # Update dates
+        if data.get("transaction_date"):
+            doc.transaction_date = data.get("transaction_date")
+        if data.get("delivery_date"):
+            doc.delivery_date = data.get("delivery_date")
+        
+        doc.run_method("set_missing_values")
+        doc.run_method("calculate_taxes_and_totals")
+        doc.save(ignore_permissions=True)
+        frappe.db.commit()
+        
+        return {
+            "status": "ok",
+            "message": f"Sales Order '{doc.name}' updated successfully",
+            "name": doc.name
+        }
+    except Exception as e:
+        frappe.db.rollback()
+        frappe.log_error(frappe.get_traceback(), "Update Sales Order PWA Error")
+        return {"status": "error", "message": str(e) or "Failed to update sales order"}
+
+
 import json
 import frappe
 from frappe.utils import flt, cint, getdate

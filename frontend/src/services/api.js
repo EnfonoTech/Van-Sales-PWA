@@ -347,6 +347,7 @@ const transformInvoiceFromAPI = (apiInvoice) => {
     tax: taxAmount,
     total: parseFloat(apiInvoice.grand_total || apiInvoice.total || 0),
     status: apiInvoice.status || (apiInvoice.docstatus === 1 ? 'Submitted' : apiInvoice.docstatus === 0 ? 'Draft' : 'Cancelled'),
+    docstatus: apiInvoice.docstatus,
     outstanding_amount: parseFloat(apiInvoice.outstanding_amount || 0),
     pdf_url: apiInvoice.pdf_url || ''
   };
@@ -1452,6 +1453,17 @@ export const submitQuotation = async (name) => {
   return msg;
 };
 
+export const updateQuotation = async (data) => {
+  const response = await apiRequest('/method/fateh_pwa.pwa.update_quotation', {
+    method: 'POST',
+    body: JSON.stringify(data),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const msg = response?.message || response;
+  if (msg?.status === 'error') throw new Error(msg.message || 'Failed to update quotation');
+  return msg;
+};
+
 // ---------- Sales Orders ----------
 export const getSalesOrderList = async (options = {}) => {
   const limit = Math.min(100, Math.max(1, parseInt(options.limit, 10) || 20));
@@ -1492,6 +1504,49 @@ export const submitSalesOrder = async (name) => {
   });
   const msg = response?.message || response;
   if (msg?.status === 'error') throw new Error(msg.message || 'Failed to submit sales order');
+  return msg;
+};
+
+export const updateSalesOrder = async (data) => {
+  const response = await apiRequest('/method/fateh_pwa.pwa.update_sales_order', {
+    method: 'POST',
+    body: JSON.stringify(data),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const msg = response?.message || response;
+  if (msg?.status === 'error') throw new Error(msg.message || 'Failed to update sales order');
+  return msg;
+};
+
+/**
+ * Convert a submitted Quotation to a Sales Order
+ * @param {string} name - Quotation name
+ * @returns {Promise<Object>} Created Sales Order details
+ */
+export const convertQuotationToSalesOrder = async (name) => {
+  const response = await apiRequest('/method/fateh_pwa.pwa.convert_quotation_to_sales_order', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const msg = response?.message || response;
+  if (msg?.status === 'error') throw new Error(msg.message || 'Failed to convert quotation to sales order');
+  return msg;
+};
+
+/**
+ * Convert a submitted Sales Order to a Sales Invoice
+ * @param {string} name - Sales Order name
+ * @returns {Promise<Object>} Created Sales Invoice details
+ */
+export const convertSalesOrderToSalesInvoice = async (name) => {
+  const response = await apiRequest('/method/fateh_pwa.pwa.convert_sales_order_to_sales_invoice', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const msg = response?.message || response;
+  if (msg?.status === 'error') throw new Error(msg.message || 'Failed to convert sales order to sales invoice');
   return msg;
 };
 
