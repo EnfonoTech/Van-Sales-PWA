@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Plus, Search, Trash2, Save, Loader2, Check } from 'lucide-react';
-import { getItemPrice, searchItems, createSalesInvoice, updateSalesInvoice, getInvoiceDetails, getItemDetails, submitSalesInvoice, createCustomer } from '../services/api';
+import { getItemPrice, searchItems, createSalesInvoice, updateSalesInvoice, getInvoiceDetails, getItemDetails, submitSalesInvoice, createCustomer, getSalesInvoiceList } from '../services/api';
 import SARSymbol from './SARSymbol';
 
 function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadingCustomers, loadingItems, loadingSales }) {
@@ -25,6 +25,9 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [submittingInvoice, setSubmittingInvoice] = useState(false);
   const [invoiceSearch, setInvoiceSearch] = useState('');
+  const [invoiceSearchResults, setInvoiceSearchResults] = useState([]);
+  const [loadingInvoiceSearch, setLoadingInvoiceSearch] = useState(false);
+  const invoiceSearchDebounceRef = useRef(null);
   const [editingInvoice, setEditingInvoice] = useState(null);
   const [showQuickCustomerForm, setShowQuickCustomerForm] = useState(false);
   const [quickCustomerFormData, setQuickCustomerFormData] = useState({
@@ -150,6 +153,36 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
       setShowCustomerResults(false);
     }
   }, [customerSearch, customers]);
+
+  // When user searches invoices, fetch from server (so any invoice can be found, not just the first 20)
+  useEffect(() => {
+    const term = invoiceSearch.trim();
+    if (!term) {
+      setInvoiceSearchResults([]);
+      setLoadingInvoiceSearch(false);
+      if (invoiceSearchDebounceRef.current) {
+        clearTimeout(invoiceSearchDebounceRef.current);
+        invoiceSearchDebounceRef.current = null;
+      }
+      return;
+    }
+    if (invoiceSearchDebounceRef.current) clearTimeout(invoiceSearchDebounceRef.current);
+    invoiceSearchDebounceRef.current = setTimeout(() => {
+      invoiceSearchDebounceRef.current = null;
+      setLoadingInvoiceSearch(true);
+      getSalesInvoiceList({ limit: 100, offset: 0, search: term })
+        .then(({ invoices }) => {
+          setInvoiceSearchResults(Array.isArray(invoices) ? invoices : []);
+        })
+        .catch(() => setInvoiceSearchResults([]))
+        .finally(() => setLoadingInvoiceSearch(false));
+    }, 350);
+    return () => {
+      if (invoiceSearchDebounceRef.current) {
+        clearTimeout(invoiceSearchDebounceRef.current);
+      }
+    };
+  }, [invoiceSearch]);
 
   // Close customer dropdown when clicking outside
   useEffect(() => {
@@ -1589,7 +1622,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
             <div className="empty-state-title mt-4">Loading sales data...</div>
           </div>
         </div>
-      ) : sales.length > 0 ? (
+      ) : sales.length > 0 || invoiceSearch.trim() ? (
         <div className="card">
           <div className="mb-4">
             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -1609,7 +1642,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                 <input
                   type="text"
                   className="form-input"
-                  placeholder="Search by customer English name or invoice ID..."
+                  placeholder="Search by customer English name or invoice ID (searches all your invoices)..."
                   value={invoiceSearch}
                   onChange={(e) => setInvoiceSearch(e.target.value)}
                   style={{ paddingLeft: '40px' }}
@@ -1629,62 +1662,61 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                 </tr>
               </thead>
               <tbody>
-                {sales.slice()
-                  .filter(sale => {
-                    if (!invoiceSearch.trim()) return true;
-                    const searchLower = invoiceSearch.toLowerCase();
-                    const invoiceId = (sale.id || sale.invoice_name || sale.name || '').toLowerCase();
-                    
-                    // Try to get customer English name from sale data or lookup from customers array
-                    let customerEnglishName = sale.customerEnglishName || '';
-                    if (!customerEnglishName && sale.customerId) {
-                      const customer = customers.find(c => c.id === sale.customerId);
-                      customerEnglishName = customer?.custom_customer_name_english || '';
-                    }
-                    if (!customerEnglishName && sale.customerName) {
-                      const customer = customers.find(c => c.name === sale.customerName);
-                      customerEnglishName = customer?.custom_customer_name_english || '';
-                    }
-                    
-                    const customerEnglishNameLower = customerEnglishName.toLowerCase();
-                    return invoiceId.includes(searchLower) || customerEnglishNameLower.includes(searchLower);
-                  })
-                  .sort((a, b) => {
-                  // Sort by date in descending order (newest first)
-                  const dateA = new Date(a.date);
-                  const dateB = new Date(b.date);
-                  return dateB - dateA;
-                }).map(sale => (
-                  <tr 
-                    key={sale.id}
-                    onClick={() => handleViewDetails(sale)}
-                    style={{ cursor: 'pointer' }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--gray-50)'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  >
-                    <td className="font-semibold">{sale.id}</td>
-                    <td>{formatDate(sale.date)}</td>
-                    <td>
-                      {(() => {
-                        // Try to get customer English name from sale data or lookup from customers array
-                        let customerEnglishName = sale.customerEnglishName;
-                        if (!customerEnglishName && sale.customerId) {
-                          const customer = customers.find(c => c.id === sale.customerId);
-                          customerEnglishName = customer?.custom_customer_name_english || '';
-                        }
-                        if (!customerEnglishName && sale.customerName) {
-                          const customer = customers.find(c => c.name === sale.customerName);
-                          customerEnglishName = customer?.custom_customer_name_english || '';
-                        }
-                        return customerEnglishName || sale.customerName || '-';
-                      })()}
-                    </td>
-                    <td className="font-semibold"><SARSymbol size={16} /> {sale.total.toFixed(2)}</td>
-                    <td>
-                      <span className="badge badge-primary">{sale.status}</span>
+                {loadingInvoiceSearch ? (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'center', padding: '2rem' }}>
+                      <Loader2 size={24} className="animate-spin" style={{ margin: '0 auto', display: 'block' }} />
+                      <span className="text-muted">Searching invoices...</span>
                     </td>
                   </tr>
-                ))}
+                ) : (() => {
+                  const isSearching = !!invoiceSearch.trim();
+                  const list = isSearching ? invoiceSearchResults : sales;
+                  const sorted = list.slice().sort((a, b) => {
+                    const dateA = new Date(a.date);
+                    const dateB = new Date(b.date);
+                    return dateB - dateA;
+                  });
+                  if (isSearching && sorted.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={5} style={{ textAlign: 'center', padding: '2rem' }} className="text-muted">
+                          No matching invoices
+                        </td>
+                      </tr>
+                    );
+                  }
+                  return sorted.map(sale => (
+                    <tr 
+                      key={sale.id}
+                      onClick={() => handleViewDetails(sale)}
+                      style={{ cursor: 'pointer' }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--gray-50)'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                      <td className="font-semibold">{sale.id}</td>
+                      <td>{formatDate(sale.date)}</td>
+                      <td>
+                        {(() => {
+                          let customerEnglishName = sale.customerEnglishName;
+                          if (!customerEnglishName && sale.customerId) {
+                            const customer = customers.find(c => c.id === sale.customerId);
+                            customerEnglishName = customer?.custom_customer_name_english || '';
+                          }
+                          if (!customerEnglishName && sale.customerName) {
+                            const customer = customers.find(c => c.name === sale.customerName);
+                            customerEnglishName = customer?.custom_customer_name_english || '';
+                          }
+                          return customerEnglishName || sale.customerName || '-';
+                        })()}
+                      </td>
+                      <td className="font-semibold"><SARSymbol size={16} /> {sale.total.toFixed(2)}</td>
+                      <td>
+                        <span className="badge badge-primary">{sale.status}</span>
+                      </td>
+                    </tr>
+                  ));
+                })()}
               </tbody>
             </table>
           </div>

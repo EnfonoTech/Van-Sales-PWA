@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
-import { Home, Users, ShoppingCart, FileText, Package, LogOut, Loader2 } from 'lucide-react';
+import { Home, Users, ShoppingCart, FileText, Package, LogOut, Loader2, UserPlus, FileCheck, ClipboardList } from 'lucide-react';
 import InstallPrompt from './components/InstallPrompt';
 import OfflineIndicator from './components/OfflineIndicator';
 import Login from './components/Login';
@@ -16,6 +16,9 @@ const CustomerModule = lazy(() => import('./components/CustomerModule'));
 const SalesReturnModule = lazy(() => import('./components/SalesReturnModule'));
 const PaymentModule = lazy(() => import('./components/PaymentModule'));
 const StockModule = lazy(() => import('./components/StockModule'));
+const LeadModule = lazy(() => import('./components/LeadModule'));
+const QuotationModule = lazy(() => import('./components/QuotationModule'));
+const SalesOrderModule = lazy(() => import('./components/SalesOrderModule'));
 
 // Loading fallback component
 const RouteLoader = () => (
@@ -270,6 +273,12 @@ function AppContent({ onLogout }) {
           case 'stock':
             await fetchItems();
             break;
+          case 'leads':
+            break;
+          case 'quotations':
+          case 'sales-orders':
+            await Promise.all([fetchCustomers(), fetchItems()]);
+            break;
           default:
             break;
         }
@@ -330,6 +339,9 @@ function AppContent({ onLogout }) {
     { id: 'returns', label: 'Returns', icon: FileText },
     { id: 'payments', label: 'Payments', icon: null, customIcon: <SARSymbol size={20} /> },
     { id: 'stock', label: 'Stock', icon: Package },
+    { id: 'leads', label: 'Leads', icon: UserPlus },
+    { id: 'quotations', label: 'Quotations', icon: FileCheck },
+    { id: 'sales-orders', label: 'Sales Orders', icon: ClipboardList },
   ];
 
   return (
@@ -382,6 +394,9 @@ function AppContent({ onLogout }) {
             <Route path="/returns" element={<SalesReturnModule customers={customers} sales={sales} loadingSales={dataStatus.sales === 'loading'} loadingCustomers={dataStatus.customers === 'loading'} />} />
             <Route path="/payments" element={<PaymentModule customers={customers} sales={sales} payments={payments} onAddPayment={handleAddPayment} loadingCustomers={dataStatus.customers === 'loading'} loadingPayments={dataStatus.payments === 'loading'} loadingSales={dataStatus.sales === 'loading'} />} />
             <Route path="/stock" element={<StockModule items={items} loadingItems={dataStatus.items === 'loading'} />} />
+            <Route path="/leads" element={<LeadModule />} />
+            <Route path="/quotations" element={<QuotationModule customers={customers} items={items} />} />
+            <Route path="/sales-orders" element={<SalesOrderModule customers={customers} items={items} />} />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </Suspense>

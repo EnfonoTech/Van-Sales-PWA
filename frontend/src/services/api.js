@@ -1309,15 +1309,19 @@ export const getStock = async (warehouse = null) => {
 
 /**
  * Get sales invoice list (paginated; only invoices created by or assigned to current user).
- * @param {Object} [options] - Optional pagination
+ * When search is provided, results are matched server-side from all allowed invoices.
+ * @param {Object} [options] - Optional pagination and search
  * @param {number} [options.limit=20] - Page size (1–100)
  * @param {number} [options.offset=0] - Offset for pagination
+ * @param {string} [options.search] - Search by invoice ID or customer name (server-side)
  * @returns {Promise<{ invoices: Array, totalCount: number }>}
  */
 export const getSalesInvoiceList = async (options = {}) => {
   const limit = Math.min(100, Math.max(1, parseInt(options.limit, 10) || 20));
   const offset = Math.max(0, parseInt(options.offset, 10) || 0);
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  const search = (options.search || '').trim();
+  if (search) params.set('search', search);
   const url = `/method/fateh_pwa.pwa.get_sales_invoice_list?${params.toString()}`;
   const response = await apiRequest(url, { method: 'GET' });
 
@@ -1371,6 +1375,113 @@ export const getSalesInvoiceList = async (options = {}) => {
   }).filter(inv => inv && inv.id); // Filter out any null/undefined invoices
 
   return { invoices: transformed, totalCount };
+};
+
+// ---------- Leads ----------
+export const getLeadList = async (options = {}) => {
+  const limit = Math.min(100, Math.max(1, parseInt(options.limit, 10) || 20));
+  const offset = Math.max(0, parseInt(options.offset, 10) || 0);
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  const search = (options.search || '').trim();
+  if (search) params.set('search', search);
+  const response = await apiRequest(`/method/fateh_pwa.pwa.get_lead_list?${params.toString()}`, { method: 'GET' });
+  const msg = response?.message || response;
+  const leads = Array.isArray(msg?.leads) ? msg.leads : [];
+  const totalCount = msg?.total_count != null ? msg.total_count : leads.length;
+  return { leads, totalCount };
+};
+
+export const getLeadDetails = async (name) => {
+  const response = await apiRequest(`/method/fateh_pwa.pwa.get_lead_details?name=${encodeURIComponent(name)}`, { method: 'GET' });
+  const msg = response?.message || response;
+  if (msg?.status === 'error') throw new Error(msg.message || 'Lead not found');
+  return msg?.lead || msg;
+};
+
+export const createLead = async (data) => {
+  const response = await apiRequest('/method/fateh_pwa.pwa.create_lead', {
+    method: 'POST',
+    body: JSON.stringify(data),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const msg = response?.message || response;
+  if (msg?.status === 'error') throw new Error(msg.message || 'Failed to create lead');
+  return msg;
+};
+
+// ---------- Quotations ----------
+export const getQuotationList = async (options = {}) => {
+  const limit = Math.min(100, Math.max(1, parseInt(options.limit, 10) || 20));
+  const offset = Math.max(0, parseInt(options.offset, 10) || 0);
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  const search = (options.search || '').trim();
+  if (search) params.set('search', search);
+  const response = await apiRequest(`/method/fateh_pwa.pwa.get_quotation_list?${params.toString()}`, { method: 'GET' });
+  const msg = response?.message || response;
+  const quotations = Array.isArray(msg?.quotations) ? msg.quotations : [];
+  const totalCount = msg?.total_count != null ? msg.total_count : quotations.length;
+  return { quotations, totalCount };
+};
+
+export const getQuotationDetails = async (name) => {
+  const response = await apiRequest(`/method/fateh_pwa.pwa.get_quotation_details?name=${encodeURIComponent(name)}`, { method: 'GET' });
+  const msg = response?.message || response;
+  if (msg?.status === 'error') throw new Error(msg.message || 'Quotation not found');
+  return msg?.quotation || msg;
+};
+
+export const createQuotation = async (data) => {
+  const response = await apiRequest('/method/fateh_pwa.pwa.create_quotation', {
+    method: 'POST',
+    body: JSON.stringify(data),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const msg = response?.message || response;
+  if (msg?.status === 'error') throw new Error(msg.message || 'Failed to create quotation');
+  return msg;
+};
+
+export const submitQuotation = async (name) => {
+  const response = await apiRequest('/method/fateh_pwa.pwa.submit_quotation', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const msg = response?.message || response;
+  if (msg?.status === 'error') throw new Error(msg.message || 'Failed to submit quotation');
+  return msg;
+};
+
+// ---------- Sales Orders ----------
+export const getSalesOrderList = async (options = {}) => {
+  const limit = Math.min(100, Math.max(1, parseInt(options.limit, 10) || 20));
+  const offset = Math.max(0, parseInt(options.offset, 10) || 0);
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  const search = (options.search || '').trim();
+  if (search) params.set('search', search);
+  const response = await apiRequest(`/method/fateh_pwa.pwa.get_sales_order_list?${params.toString()}`, { method: 'GET' });
+  const msg = response?.message || response;
+  const sales_orders = Array.isArray(msg?.sales_orders) ? msg.sales_orders : [];
+  const totalCount = msg?.total_count != null ? msg.total_count : sales_orders.length;
+  return { sales_orders, totalCount };
+};
+
+export const getSalesOrderDetails = async (name) => {
+  const response = await apiRequest(`/method/fateh_pwa.pwa.get_sales_order_details?name=${encodeURIComponent(name)}`, { method: 'GET' });
+  const msg = response?.message || response;
+  if (msg?.status === 'error') throw new Error(msg.message || 'Sales Order not found');
+  return msg?.sales_order || msg;
+};
+
+export const createSalesOrder = async (data) => {
+  const response = await apiRequest('/method/fateh_pwa.pwa.create_sales_order', {
+    method: 'POST',
+    body: JSON.stringify(data),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const msg = response?.message || response;
+  if (msg?.status === 'error') throw new Error(msg.message || 'Failed to create sales order');
+  return msg;
 };
 
 /**
@@ -2120,6 +2231,19 @@ export default {
   getSalesInvoiceList,
   getInvoiceDetails,
   submitSalesInvoice,
+  // Leads
+  getLeadList,
+  getLeadDetails,
+  createLead,
+  // Quotations
+  getQuotationList,
+  getQuotationDetails,
+  createQuotation,
+  submitQuotation,
+  // Sales Orders
+  getSalesOrderList,
+  getSalesOrderDetails,
+  createSalesOrder,
   // Payment Entries
   createPayment,
   createPaymentEntry,

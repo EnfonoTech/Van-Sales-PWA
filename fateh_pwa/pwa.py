@@ -1757,6 +1757,7 @@ def get_sales_invoice_list():
     status = frappe.form_dict.get("status")
     start_date = frappe.form_dict.get("start_date")
     end_date = frappe.form_dict.get("end_date")
+    search = (frappe.form_dict.get("search") or frappe.form_dict.get("q") or "").strip()
     limit = cint(frappe.form_dict.get("limit"), 20)
     offset = cint(frappe.form_dict.get("offset"), 0)
     limit = max(1, min(limit, 100))  # clamp between 1 and 100
@@ -1800,10 +1801,31 @@ def get_sales_invoice_list():
     if start_date and end_date:
         filters["posting_date"] = ["between", [start_date, end_date]]
 
+    # When search is provided, match from all allowed invoices (not just first 20)
+    or_filters = None
+    if search:
+        _esc = (search or "").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        search_like = "%" + _esc + "%"
+        or_filters = [
+            ["name", "like", search_like],
+            ["customer", "like", search_like],
+        ]
+        try:
+            customer_match = frappe.get_all(
+                "Customer",
+                filters=[["custom_customer_name_english", "like", search_like]],
+                pluck="name",
+            )
+            if customer_match:
+                or_filters.append(["customer", "in", customer_match])
+        except Exception:
+            pass
+
     total_count = frappe.db.count("Sales Invoice", filters)
     invoice_names = frappe.get_all(
         "Sales Invoice",
         filters=filters,
+        or_filters=or_filters,
         fields=["name"],
         order_by="posting_date desc, modified desc",
         limit_start=offset,
@@ -1855,6 +1877,311 @@ def get_sales_invoice_list():
         "invoices": invoice_list
     }
 
+
+# ---------- Lead ----------
+@frappe.whitelist(allow_guest=False, methods=["GET"])
+def get_lead_list():
+    """List leads (owner or assigned to current user). Supports limit, offset, search."""
+    search = (frappe.form_dict.get("search") or frappe.form_dict.get("q") or "").strip()
+    limit = max(1, min(cint(frappe.form_dict.get("limit"), 20), 100))
+    offset = max(0, cint(frappe.form_dict.get("offset"), 0))
+    current_user = frappe.session.user
+    created = set(frappe.get_all("Lead", filters={"owner": current_user}, pluck="name"))
+    assigned = set(
+        frappe.get_all(
+            "ToDo",
+            filters={"reference_type": "Lead", "allocated_to": current_user, "status": ["!=", "Cancelled"]},
+            pluck="reference_name"
+        )
+    )
+    allowed = created | assigned
+    if not allowed:
+        return {"status_code": 200, "count": 0, "total_count": 0, "leads": []}
+    filters = {"name": ["in", list(allowed)]}
+    or_filters = None
+    if search:
+        _esc = (search or "").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        search_like = "%" + _esc + "%"
+        or_filters = [
+            ["name", "like", search_like],
+            ["lead_name", "like", search_like],
+            ["company_name", "like", search_like],
+            ["email_id", "like", search_like],
+            ["mobile_no", "like", search_like],
+        ]
+    total_count = frappe.db.count("Lead", filters)
+    names = frappe.get_all(
+        "Lead",
+        filters=filters,
+        or_filters=or_filters,
+        fields=["name", "lead_name", "company_name", "email_id", "mobile_no", "status", "creation"],
+        order_by="modified desc",
+        limit_start=offset,
+        limit_page_length=limit,
+    )
+    leads = [{"name": n.name, "lead_name": n.lead_name, "company_name": n.company_name, "email_id": n.email_id, "mobile_no": n.mobile_no, "status": n.status, "creation": n.creation} for n in names]
+    return {"status_code": 200, "count": len(leads), "total_count": total_count, "leads": leads}
+
+
+@frappe.whitelist(allow_guest=False, methods=["GET"])
+def get_lead_details():
+    """Get a single Lead by name."""
+    name = frappe.form_dict.get("name")
+    if not name or not frappe.db.exists("Lead", name):
+        return {"status": "error", "message": "Lead not found"}
+    doc = frappe.get_doc("Lead", name)
+    return {"status": "ok", "lead": doc.as_dict()}
+
+
+@frappe.whitelist(allow_guest=False, methods=["POST"])
+def create_lead():
+    """Create a new Lead."""
+    try:
+        data = json.loads(frappe.request.data) if frappe.request.data else frappe.form_dict
+        lead_name = (data.get("first_name") or "").strip() or (data.get("lead_name") or "").strip()
+        company_name = (data.get("company_name") or "").strip()
+        if not lead_name and not company_name:
+            return {"status": "error", "message": "Lead name (or first_name) or company_name is required"}
+        doc = frappe.new_doc("Lead")
+        if lead_name:
+            doc.lead_name = lead_name
+        if data.get("first_name"):
+            doc.first_name = data["first_name"]
+        if data.get("last_name"):
+            doc.last_name = data["last_name"]
+        if company_name:
+            doc.company_name = company_name
+        if data.get("email_id"):
+            doc.email_id = data["email_id"]
+        if data.get("mobile_no"):
+            doc.mobile_no = data["mobile_no"]
+        if data.get("phone"):
+            doc.phone = data["phone"]
+        if data.get("source"):
+            doc.source = data["source"]
+        if data.get("status"):
+            doc.status = data["status"]
+        doc.insert(ignore_permissions=False)
+        return {"status": "ok", "message": "Lead created", "name": doc.name}
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Create Lead PWA Error")
+        return {"status": "error", "message": str(e) or "Failed to create lead"}
+
+
+# ---------- Quotation ----------
+@frappe.whitelist(allow_guest=False, methods=["GET"])
+def get_quotation_list():
+    """List quotations (owner or assigned). Supports limit, offset, search."""
+    search = (frappe.form_dict.get("search") or frappe.form_dict.get("q") or "").strip()
+    limit = max(1, min(cint(frappe.form_dict.get("limit"), 20), 100))
+    offset = max(0, cint(frappe.form_dict.get("offset"), 0))
+    current_user = frappe.session.user
+    created = set(frappe.get_all("Quotation", filters={"owner": current_user}, pluck="name"))
+    assigned = set(
+        frappe.get_all(
+            "ToDo",
+            filters={"reference_type": "Quotation", "allocated_to": current_user, "status": ["!=", "Cancelled"]},
+            pluck="reference_name"
+        )
+    )
+    allowed = created | assigned
+    if not allowed:
+        return {"status_code": 200, "count": 0, "total_count": 0, "quotations": []}
+    filters = {"name": ["in", list(allowed)]}
+    or_filters = None
+    if search:
+        _esc = (search or "").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        search_like = "%" + _esc + "%"
+        or_filters = [["name", "like", search_like], ["party_name", "like", search_like], ["customer_name", "like", search_like]]
+    total_count = frappe.db.count("Quotation", filters)
+    names = frappe.get_all(
+        "Quotation",
+        filters=filters,
+        or_filters=or_filters,
+        fields=["name", "quotation_to", "party_name", "customer_name", "transaction_date", "valid_till", "grand_total", "status", "docstatus"],
+        order_by="modified desc",
+        limit_start=offset,
+        limit_page_length=limit,
+    )
+    out = []
+    for n in names:
+        out.append({
+            "name": n.name,
+            "quotation_to": n.quotation_to,
+            "party_name": n.party_name,
+            "customer_name": n.customer_name,
+            "transaction_date": n.transaction_date,
+            "valid_till": n.valid_till,
+            "grand_total": n.grand_total,
+            "status": n.status,
+            "docstatus": n.docstatus,
+        })
+    return {"status_code": 200, "count": len(out), "total_count": total_count, "quotations": out}
+
+
+@frappe.whitelist(allow_guest=False, methods=["GET"])
+def get_quotation_details():
+    """Get a single Quotation by name."""
+    name = frappe.form_dict.get("name")
+    if not name or not frappe.db.exists("Quotation", name):
+        return {"status": "error", "message": "Quotation not found"}
+    doc = frappe.get_doc("Quotation", name)
+    return {"status": "ok", "quotation": doc.as_dict()}
+
+
+@frappe.whitelist(allow_guest=False, methods=["POST"])
+def create_quotation():
+    """Create a new Quotation. quotation_to: Lead or Customer, party_name: name of Lead/Customer, items: list of {item_code, qty, rate, uom}."""
+    try:
+        data = json.loads(frappe.request.data) if frappe.request.data else frappe.form_dict
+        quotation_to = (data.get("quotation_to") or "Customer").strip()
+        party_name = (data.get("party_name") or data.get("customer") or "").strip()
+        items = data.get("items") or []
+        if not party_name:
+            return {"status": "error", "message": "party_name (or customer) is required"}
+        if quotation_to not in ("Lead", "Customer"):
+            return {"status": "error", "message": "quotation_to must be Lead or Customer"}
+        if not frappe.db.exists(quotation_to, party_name):
+            return {"status": "error", "message": f"{quotation_to} '{party_name}' not found"}
+        if not items:
+            return {"status": "error", "message": "items is required"}
+        company = data.get("company") or _get_user_company()
+        if not company:
+            return {"status": "error", "message": "Company could not be determined"}
+        doc = frappe.new_doc("Quotation")
+        doc.quotation_to = quotation_to
+        doc.party_name = party_name
+        doc.company = company
+        if data.get("transaction_date"):
+            doc.transaction_date = data["transaction_date"]
+        if data.get("valid_till"):
+            doc.valid_till = data["valid_till"]
+        for row in items:
+            doc.append("items", {
+                "item_code": row.get("item_code"),
+                "qty": flt(row.get("qty"), 1),
+                "rate": flt(row.get("rate"), 0),
+                "uom": row.get("uom") or frappe.db.get_value("Item", row.get("item_code"), "stock_uom") or "Nos",
+            })
+        doc.insert(ignore_permissions=False)
+        doc.run_method("set_taxes")
+        doc.run_method("calculate_totals")
+        doc.save()
+        return {"status": "ok", "message": "Quotation created", "name": doc.name}
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Create Quotation PWA Error")
+        return {"status": "error", "message": str(e) or "Failed to create quotation"}
+
+
+@frappe.whitelist(allow_guest=False, methods=["POST"])
+def submit_quotation():
+    """Submit a draft Quotation (set docstatus = 1)."""
+    try:
+        name = frappe.form_dict.get("name")
+        if frappe.request.data:
+            data = json.loads(frappe.request.data)
+            name = data.get("name") or name
+        if not name or not frappe.db.exists("Quotation", name):
+            return {"status": "error", "message": "Quotation not found"}
+        doc = frappe.get_doc("Quotation", name)
+        if doc.docstatus == 1:
+            return {"status": "ok", "message": "Quotation already submitted", "name": doc.name}
+        if doc.docstatus == 2:
+            return {"status": "error", "message": "Cancelled quotation cannot be submitted"}
+        doc.submit()
+        return {"status": "ok", "message": "Quotation submitted", "name": doc.name}
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Submit Quotation PWA Error")
+        return {"status": "error", "message": str(e) or "Failed to submit quotation"}
+
+
+# ---------- Sales Order ----------
+@frappe.whitelist(allow_guest=False, methods=["GET"])
+def get_sales_order_list():
+    """List sales orders (owner or assigned). Supports limit, offset, search."""
+    search = (frappe.form_dict.get("search") or frappe.form_dict.get("q") or "").strip()
+    limit = max(1, min(cint(frappe.form_dict.get("limit"), 20), 100))
+    offset = max(0, cint(frappe.form_dict.get("offset"), 0))
+    current_user = frappe.session.user
+    created = set(frappe.get_all("Sales Order", filters={"owner": current_user}, pluck="name"))
+    assigned = set(
+        frappe.get_all(
+            "ToDo",
+            filters={"reference_type": "Sales Order", "allocated_to": current_user, "status": ["!=", "Cancelled"]},
+            pluck="reference_name"
+        )
+    )
+    allowed = created | assigned
+    if not allowed:
+        return {"status_code": 200, "count": 0, "total_count": 0, "sales_orders": []}
+    filters = {"name": ["in", list(allowed)]}
+    or_filters = None
+    if search:
+        _esc = (search or "").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        search_like = "%" + _esc + "%"
+        or_filters = [["name", "like", search_like], ["customer", "like", search_like], ["customer_name", "like", search_like]]
+    total_count = frappe.db.count("Sales Order", filters)
+    names = frappe.get_all(
+        "Sales Order",
+        filters=filters,
+        or_filters=or_filters,
+        fields=["name", "customer", "customer_name", "transaction_date", "delivery_date", "grand_total", "status", "docstatus"],
+        order_by="modified desc",
+        limit_start=offset,
+        limit_page_length=limit,
+    )
+    out = [{"name": n.name, "customer": n.customer, "customer_name": n.customer_name, "transaction_date": n.transaction_date, "delivery_date": n.delivery_date, "grand_total": n.grand_total, "status": n.status, "docstatus": n.docstatus} for n in names]
+    return {"status_code": 200, "count": len(out), "total_count": total_count, "sales_orders": out}
+
+
+@frappe.whitelist(allow_guest=False, methods=["GET"])
+def get_sales_order_details():
+    """Get a single Sales Order by name."""
+    name = frappe.form_dict.get("name")
+    if not name or not frappe.db.exists("Sales Order", name):
+        return {"status": "error", "message": "Sales Order not found"}
+    doc = frappe.get_doc("Sales Order", name)
+    return {"status": "ok", "sales_order": doc.as_dict()}
+
+
+@frappe.whitelist(allow_guest=False, methods=["POST"])
+def create_sales_order():
+    """Create a new Sales Order. customer: Customer name, items: list of {item_code, qty, rate, uom}."""
+    try:
+        data = json.loads(frappe.request.data) if frappe.request.data else frappe.form_dict
+        customer = (data.get("customer") or data.get("customer_name") or "").strip()
+        items = data.get("items") or []
+        if not customer:
+            return {"status": "error", "message": "customer is required"}
+        if not frappe.db.exists("Customer", customer):
+            return {"status": "error", "message": f"Customer '{customer}' not found"}
+        if not items:
+            return {"status": "error", "message": "items is required"}
+        company = data.get("company") or _get_user_company()
+        if not company:
+            return {"status": "error", "message": "Company could not be determined"}
+        doc = frappe.new_doc("Sales Order")
+        doc.customer = customer
+        doc.company = company
+        if data.get("transaction_date"):
+            doc.transaction_date = data["transaction_date"]
+        if data.get("delivery_date"):
+            doc.delivery_date = data["delivery_date"]
+        for row in items:
+            doc.append("items", {
+                "item_code": row.get("item_code"),
+                "qty": flt(row.get("qty"), 1),
+                "rate": flt(row.get("rate"), 0),
+                "uom": row.get("uom") or frappe.db.get_value("Item", row.get("item_code"), "stock_uom") or "Nos",
+            })
+        doc.insert(ignore_permissions=False)
+        doc.run_method("set_taxes")
+        doc.run_method("calculate_totals")
+        doc.save()
+        return {"status": "ok", "message": "Sales Order created", "name": doc.name}
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Create Sales Order PWA Error")
+        return {"status": "error", "message": str(e) or "Failed to create sales order"}
 
 
 import json
