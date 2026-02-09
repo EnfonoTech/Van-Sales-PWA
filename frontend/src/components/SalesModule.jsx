@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Plus, Search, Trash2, Save, Loader2, Check } from 'lucide-react';
-import { getItemPrice, searchItems, createSalesInvoice, updateSalesInvoice, getInvoiceDetails, getItemDetails, submitSalesInvoice, createCustomer, getSalesInvoiceList } from '../services/api';
+import { getItemPrice, searchItems, createSalesInvoice, updateSalesInvoice, getInvoiceDetails, getItemDetails, submitSalesInvoice, createCustomer, getSalesInvoiceList, getPaymentMethods } from '../services/api';
 import SARSymbol from './SARSymbol';
 
 function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadingCustomers, loadingItems, loadingSales }) {
@@ -36,6 +36,8 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
   });
   const [quickCustomerVatError, setQuickCustomerVatError] = useState('');
   const [submittingQuickCustomer, setSubmittingQuickCustomer] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState([]);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
   const itemDropdownRef = useRef(null);
   const sanitizeDecimalInput = (value = '') => value.replace(/[^0-9.]/g, '');
   const sanitizeIntegerInput = (value = '') => value.replace(/[^0-9]/g, '');
@@ -161,6 +163,15 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         .finally(() => setLoadingDetails(false));
     }
   }, [location.search]);
+
+  // Fetch payment methods on mount
+  useEffect(() => {
+    getPaymentMethods().then((list) => {
+      if (Array.isArray(list) && list.length > 0) {
+        setPaymentMethods(list);
+      }
+    }).catch(() => setPaymentMethods([]));
+  }, []);
 
   // Filter customers based on search query
   useEffect(() => {
@@ -670,6 +681,14 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
 
       setInvoiceItems(itemsForForm);
       setDiscountAmount((details.discount ?? details.discount_amount ?? 0).toString());
+      
+      // Load payment method if invoice has included payment
+      if (details.is_pos && details.payments && details.payments.length > 0) {
+        const firstPayment = details.payments[0];
+        setSelectedPaymentMethod(firstPayment.mode_of_payment || '');
+      } else {
+        setSelectedPaymentMethod('');
+      }
 
       setEditingInvoice(invoiceName);
       setView('create');
@@ -801,6 +820,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
       };
     });
 
+    const grandTotal = calculateTotal();
     const invoiceData = {
       customer: customer.name, // Use customer name for API
       customerName: customer.name,
@@ -812,8 +832,18 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
       discount: calculateDiscount(),
       discount_amount: calculateDiscount(),
       tax: calculateTax(),
-      total: calculateTotal()
+      total: grandTotal
     };
+
+    // If payment method is selected, add included payment (is_pos = 1 and payments table)
+    // Note: Amount will be recalculated by backend based on final grand_total after taxes
+    if (selectedPaymentMethod) {
+      invoiceData.is_pos = 1;
+      invoiceData.payments = [{
+        mode_of_payment: selectedPaymentMethod,
+        amount: grandTotal  // Will be adjusted by backend to match final grand_total
+      }];
+    }
 
     try {
       let result;
@@ -826,6 +856,14 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
           discount_amount: invoiceData.discount_amount,
           items: formattedItems
         };
+        // Include payment if selected
+        if (selectedPaymentMethod) {
+          minimalUpdate.is_pos = 1;
+          minimalUpdate.payments = [{
+            mode_of_payment: selectedPaymentMethod,
+            amount: grandTotal
+          }];
+        }
         result = await updateSalesInvoice(minimalUpdate);
         invoiceName = editingInvoice;
       } else {
@@ -877,6 +915,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         setSelectedCustomer('');
         setInvoiceItems([]);
         setDiscountAmount('0');
+        setSelectedPaymentMethod('');
         setEditingInvoice(null);
         setView('detail');
     } catch (error) {
@@ -1401,6 +1440,31 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                         </tr>
                       </tfoot>
                     </table>
+                  </div>
+
+                  {/* Payment Method Selection for Included Payment */}
+                  <div className="form-group mt-4" style={{ padding: '16px', background: 'var(--gray-50)', borderRadius: 'var(--radius-lg)' }}>
+                    <label className="form-label" style={{ marginBottom: '8px' }}>
+                      Payment Method (Optional - Include Payment)
+                    </label>
+                    <select
+                      className="form-select"
+                      value={selectedPaymentMethod}
+                      onChange={(e) => setSelectedPaymentMethod(e.target.value)}
+                      style={{ width: '100%', maxWidth: '400px' }}
+                    >
+                      <option value="">-- Select Payment Method (Optional) --</option>
+                      {paymentMethods.map((method) => (
+                        <option key={method} value={method}>
+                          {method}
+                        </option>
+                      ))}
+                    </select>
+                    {selectedPaymentMethod && (
+                      <div className="text-sm" style={{ marginTop: '8px', color: 'var(--success)', fontWeight: 500 }}>
+                        ✓ Payment will be included: Full amount ({calculateTotal().toFixed(2)}) will be allocated to {selectedPaymentMethod}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex gap-3 mt-4">

@@ -2575,6 +2575,24 @@ def create_sales_invoice():
             }
 
         # --------------------------------------------------
+        # INCLUDED PAYMENT (is_pos and payments table)
+        # --------------------------------------------------
+        is_pos = cint(data.get("is_pos", 0))
+        payments_data = data.get("payments", [])
+        
+        # If payments are provided, set is_pos = 1
+        if payments_data and len(payments_data) > 0:
+            is_pos = 1
+            # Validate payment methods
+            for payment in payments_data:
+                mode_of_payment = payment.get("mode_of_payment")
+                if mode_of_payment and not frappe.db.exists("Mode of Payment", mode_of_payment):
+                    return {
+                        "status": "error",
+                        "message": f"Mode of Payment '{mode_of_payment}' not found"
+                    }
+
+        # --------------------------------------------------
         # WAREHOUSE – resolve from User Permission first, then request, then company defaults
         # --------------------------------------------------
         def _get_user_warehouse(company):
@@ -2726,8 +2744,32 @@ def create_sales_invoice():
             "set_warehouse": target_warehouse or warehouse_for_items,
             "items": invoice_items,
             "taxes": tax_rows,
-            "taxes_and_charges": tax_template
+            "taxes_and_charges": tax_template,
+            "is_pos": is_pos
         })
+
+        # --------------------------------------------------
+        # ADD PAYMENTS TABLE (if is_pos = 1 and payments provided)
+        # --------------------------------------------------
+        if is_pos and payments_data:
+            for payment_entry in payments_data:
+                mode_of_payment = payment_entry.get("mode_of_payment")
+                amount = flt(payment_entry.get("amount", 0))
+                if mode_of_payment and amount > 0:
+                    # Get default account for mode of payment
+                    mop_doc = frappe.get_doc("Mode of Payment", mode_of_payment)
+                    default_account = None
+                    if mop_doc.accounts:
+                        for mop_account in mop_doc.accounts:
+                            if mop_account.company == company:
+                                default_account = mop_account.default_account
+                                break
+                    
+                    doc.append("payments", {
+                        "mode_of_payment": mode_of_payment,
+                        "amount": amount,
+                        "account": default_account
+                    })
 
         # Ensure every item and parent have a valid warehouse before set_missing_values.
         # ERPNext get_item_details -> update_bin_details -> get_bin_details(out.warehouse);
@@ -2756,6 +2798,14 @@ def create_sales_invoice():
         doc.due_date = tomorrow_date
         
         doc.calculate_taxes_and_totals()
+        
+        # If payments are provided, update payment amounts to match final grand_total
+        # This ensures the payment amount matches the calculated total after taxes/discounts
+        if is_pos and payments_data and len(doc.payments) > 0:
+            # Update payment amount to match grand_total (full payment)
+            for payment_row in doc.payments:
+                payment_row.amount = doc.grand_total
+                payment_row.base_amount = doc.grand_total * flt(doc.conversion_rate)
         
         # Update payment_schedule due_dates to tomorrow_date AFTER calculate_taxes_and_totals
         # (since calculate_taxes_and_totals might regenerate payment_schedule)
@@ -2933,6 +2983,11 @@ def get_invoice_details():
 
                 "items": items,
                 "taxes": taxes,
+                "is_pos": doc.is_pos,
+                "payments": [{
+                    "mode_of_payment": p.mode_of_payment,
+                    "amount": p.amount
+                } for p in doc.payments] if doc.is_pos and doc.payments else [],
 
                 "pdf_url": pdf_url
             }
@@ -3013,6 +3068,46 @@ def update_sales_invoice():
                     "message": f"Mode of Payment '{data.get('custom_mode_of_payment')}' not found"
                 }
             doc.custom_mode_of_payment = data.get("custom_mode_of_payment")
+
+        # --------------------------------------------------
+        # UPDATE INCLUDED PAYMENT (is_pos and payments table)
+        # --------------------------------------------------
+        if "is_pos" in data:
+            doc.is_pos = cint(data.get("is_pos", 0))
+        
+        payments_data = data.get("payments", [])
+        if payments_data and len(payments_data) > 0:
+            # Set is_pos = 1 if payments are provided
+            doc.is_pos = 1
+            # Clear existing payments and add new ones
+            doc.set("payments", [])
+            for payment_entry in payments_data:
+                mode_of_payment = payment_entry.get("mode_of_payment")
+                amount = flt(payment_entry.get("amount", 0))
+                if mode_of_payment and amount > 0:
+                    # Validate mode of payment exists
+                    if not frappe.db.exists("Mode of Payment", mode_of_payment):
+                        return {
+                            "status": "error",
+                            "message": f"Mode of Payment '{mode_of_payment}' not found"
+                        }
+                    # Get default account for mode of payment
+                    mop_doc = frappe.get_doc("Mode of Payment", mode_of_payment)
+                    default_account = None
+                    if mop_doc.accounts:
+                        for mop_account in mop_doc.accounts:
+                            if mop_account.company == doc.company:
+                                default_account = mop_account.default_account
+                                break
+                    
+                    doc.append("payments", {
+                        "mode_of_payment": mode_of_payment,
+                        "amount": amount,
+                        "account": default_account
+                    })
+        elif "is_pos" in data and cint(data.get("is_pos", 0)) == 0:
+            # If is_pos is explicitly set to 0, clear payments
+            doc.set("payments", [])
 
         # --------------------------------------------------
         # UPDATE STOCK FLAG (OPTIONAL)
@@ -3109,6 +3204,14 @@ def update_sales_invoice():
         # --------------------------------------------------
         doc.set_missing_values()
         doc.calculate_taxes_and_totals()
+        
+        # If payments are provided, update payment amounts to match final grand_total
+        # This ensures the payment amount matches the calculated total after taxes/discounts
+        if doc.is_pos and doc.payments and len(doc.payments) > 0:
+            # Update payment amount to match grand_total (full payment)
+            for payment_row in doc.payments:
+                payment_row.amount = doc.grand_total
+                payment_row.base_amount = doc.grand_total * flt(doc.conversion_rate)
         
         # Force set dates: posting_date = today, due_date = today+1 RIGHT BEFORE save to override any frontend values or hooks
         # This must be after calculate_taxes_and_totals() to ensure dates are final

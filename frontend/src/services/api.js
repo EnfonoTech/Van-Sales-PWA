@@ -362,7 +362,7 @@ const transformInvoiceToAPI = (uiInvoice) => {
   const today = new Date().toISOString().split('T')[0];
   const customer = uiInvoice.customer || uiInvoice.customerName;
 
-  return {
+  const apiData = {
     customer_name: customer,
     customer_type: 'Individual',
     customer_group: 'Commercial',
@@ -387,6 +387,16 @@ const transformInvoiceToAPI = (uiInvoice) => {
       };
     })
   };
+
+  // Preserve is_pos and payments if provided (for included payment functionality)
+  if (uiInvoice.is_pos !== undefined) {
+    apiData.is_pos = uiInvoice.is_pos;
+  }
+  if (uiInvoice.payments && Array.isArray(uiInvoice.payments)) {
+    apiData.payments = uiInvoice.payments;
+  }
+
+  return apiData;
 };
 
 /**
@@ -407,6 +417,14 @@ const buildPartialInvoiceUpdate = (uiInvoice) => {
 
   if (uiInvoice.warehouse || uiInvoice.target_warehouse) {
     payload.target_warehouse = uiInvoice.warehouse || uiInvoice.target_warehouse;
+  }
+
+  // Preserve is_pos and payments if provided (for included payment functionality)
+  if (uiInvoice.is_pos !== undefined) {
+    payload.is_pos = uiInvoice.is_pos;
+  }
+  if (uiInvoice.payments && Array.isArray(uiInvoice.payments)) {
+    payload.payments = uiInvoice.payments;
   }
 
   // Items
