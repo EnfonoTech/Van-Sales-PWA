@@ -58,11 +58,15 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
   };
 
   const handleAllocatedAmountChange = (invoiceName, value) => {
-    const sanitized = value.replace(/[^0-9.]/g, '');
-    const numValue = sanitized === '' ? 0 : parseFloat(sanitized);
-    setSelectedInvoices(selectedInvoices.map(inv => 
-      inv.invoice_name === invoiceName 
-        ? { ...inv, allocated_amount: isNaN(numValue) ? 0 : numValue }
+    // Allow digits and one decimal point so user can type floats (e.g. "12.5" or "12.")
+    let sanitized = value.replace(/[^0-9.]/g, '');
+    const dotIndex = sanitized.indexOf('.');
+    if (dotIndex >= 0) {
+      sanitized = sanitized.slice(0, dotIndex + 1) + sanitized.slice(dotIndex + 1).replace(/\./g, '');
+    }
+    setSelectedInvoices(selectedInvoices.map(inv =>
+      inv.invoice_name === invoiceName
+        ? { ...inv, allocated_amount: sanitized === '' ? '' : sanitized }
         : inv
     ));
   };
@@ -178,13 +182,21 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
         submit: false, // Create as draft, can be submitted later
         invoices: selectedInvoices.map(inv => ({
           reference_name: inv.invoice_name || inv.name,
-          allocated_amount: inv.allocated_amount || 0
+          allocated_amount: parseFloat(inv.allocated_amount) || 0
         }))
       };
 
       const response = await createPaymentEntry(paymentData);
       
-      // Call the parent callback
+      // Extract payment entry name from response - check multiple possible locations
+      const paymentEntryName = response.name || 
+                               response.payment_entry || 
+                               response.message?.name || 
+                               response.message?.payment_entry ||
+                               response.data?.name ||
+                               response.data?.payment_entry;
+      
+      // Call the parent callback with payment entry name
       onAddPayment({
         customerId: customer.id,
         customerName: customer.name,
@@ -193,7 +205,8 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
         paymentMethod: formData.paymentMethod,
         reference: formData.reference,
         notes: formData.notes,
-        paymentEntry: response.name || response.payment_entry
+        paymentEntry: paymentEntryName,
+        id: paymentEntryName || `PAY-${Date.now()}`
       });
 
       // Reset form (use first available payment method if list loaded)
@@ -239,13 +252,20 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
     setLoadingDetails(true);
     
     try {
-      // Get payment entry name from payment object
-      const paymentEntryName = payment.paymentEntry || payment.id || payment.name;
+      // Get payment entry name from payment object - check multiple possible fields
+      const paymentEntryName = payment.paymentEntry || 
+                               payment.payment_entry ||
+                               payment.id || 
+                               payment.name ||
+                               payment.reference_name;
+      
       if (paymentEntryName) {
+        // Fetch fresh details from backend to ensure we have complete data
         const details = await getPaymentEntryDetails(paymentEntryName);
         setPaymentDetails(details);
       } else {
         // Fallback to payment data if no entry name
+        console.warn('No payment entry name found, using payment object data');
         setPaymentDetails(payment);
       }
     } catch (error) {
@@ -583,7 +603,7 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
                                     type="text"
                                     inputMode="decimal"
                                     className="form-input"
-                                    value={invoice.allocated_amount !== undefined && invoice.allocated_amount !== null ? (invoice.allocated_amount === 0 ? '0' : invoice.allocated_amount.toString()) : '0'}
+                                    value={invoice.allocated_amount === undefined || invoice.allocated_amount === null ? '0' : (invoice.allocated_amount === '' ? '' : String(invoice.allocated_amount))}
                                     onChange={(e) => handleAllocatedAmountChange(invoice.invoice_name, e.target.value)}
                                     placeholder="0.00"
                                     style={{ 

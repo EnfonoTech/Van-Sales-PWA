@@ -223,29 +223,37 @@ function AppContent({ onLogout }) {
     ]);
   };
 
-  const handleAddPayment = (payment) => {
+  const handleAddPayment = async (payment) => {
     const normalizedPayment = {
       ...payment,
-      id: payment.id || `PAY-${Date.now()}`,
-      amount: payment.amount || 0
+      id: payment.id || payment.paymentEntry || `PAY-${Date.now()}`,
+      amount: payment.amount || 0,
+      paymentEntry: payment.paymentEntry || payment.id
     };
     setPayments(prevPayments => {
-      const exists = prevPayments.some(p => p.id === normalizedPayment.id);
+      const exists = prevPayments.some(p => p.id === normalizedPayment.id || p.paymentEntry === normalizedPayment.paymentEntry);
       return exists ? prevPayments : [...prevPayments, normalizedPayment];
     });
     
-    // Invalidate cache instead of immediate refetch
-    // The cache will be refreshed on next navigation or explicit refresh
+    // Invalidate cache and refetch payments list to get complete data
     import('./utils/apiCache').then(({ invalidateCache }) => {
       invalidateCache('get_payment_entries_list');
       invalidateCache('get_today_collection');
       invalidateCache('get_today_cash_collection');
       invalidateCache('get_today_bank_collection');
-      // Reset loaded state to allow refetch on next view
+      // Reset loaded state to allow refetch
       loadedRefs.current.payments = false;
     }).catch(() => {
       // Keep optimistic payment if cache invalidation fails
     });
+    
+    // Refetch payments list to get complete data from backend
+    try {
+      await fetchPayments(true);
+    } catch (error) {
+      console.error('Error refetching payments after creation:', error);
+      // Keep optimistic payment even if refetch fails
+    }
   };
 
   // Fetch data lazily based on the current view
