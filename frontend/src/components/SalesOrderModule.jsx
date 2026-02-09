@@ -1,10 +1,11 @@
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Search, Loader2 } from 'lucide-react';
+import { Plus, Search, Loader2, Check } from 'lucide-react';
 import {
   getSalesOrderList,
   getSalesOrderDetails,
   createSalesOrder,
+  submitSalesOrder,
   getItemDetails,
   searchItems,
 } from '../services/api';
@@ -43,6 +44,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
   const [orderDetail, setOrderDetail] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [submittingSalesOrder, setSubmittingSalesOrder] = useState(false);
 
   const getPriceValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) >= 0 ? parseFloat(v) : 0);
   const getQuantityValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) > 0 ? parseFloat(v) : 1);
@@ -276,6 +278,23 @@ function SalesOrderModule({ customers = [], items = [] }) {
     }
   };
 
+  const handleSubmitSalesOrder = async () => {
+    const doc = orderDetail || selectedOrder;
+    if (!doc?.name) return;
+    if (doc.docstatus === 1) return;
+    setSubmittingSalesOrder(true);
+    try {
+      await submitSalesOrder(doc.name);
+      const updated = await getSalesOrderDetails(doc.name);
+      setOrderDetail(updated);
+      setSelectedOrder(updated);
+    } catch (err) {
+      alert(err.message || 'Failed to submit sales order');
+    } finally {
+      setSubmittingSalesOrder(false);
+    }
+  };
+
   const handleSubmitCreate = async (e) => {
     e.preventDefault();
     const customer = customers.find((c) => c.id === selectedCustomer);
@@ -296,18 +315,29 @@ function SalesOrderModule({ customers = [], items = [] }) {
         rate: getPriceValue(i.price),
         uom: i.uom || i.stock_uom || 'Nos',
       }));
-      await createSalesOrder({
+      const result = await createSalesOrder({
         customer: customer.name,
         items: formattedItems,
         delivery_date: deliveryDate || undefined,
       });
+      const orderName = result.name || result.message?.name;
+      if (orderName) {
+        // Fetch details and show detail view so user can submit and print
+        const detail = await getSalesOrderDetails(orderName);
+        setSelectedOrder({ name: orderName });
+        setOrderDetail(detail);
+        setView('detail');
+      } else {
+        // Fallback to list if name not returned
+        setView('list');
+        fetchList();
+      }
+      // Clear form after successful create
       setSelectedCustomer('');
       setCustomerSearch('');
       setLineItems([]);
       setDiscountAmount('0');
       setDeliveryDate(new Date().toISOString().split('T')[0]);
-      setView('list');
-      fetchList();
     } catch (err) {
       alert(err.message || 'Failed to create sales order');
     } finally {
@@ -320,6 +350,29 @@ function SalesOrderModule({ customers = [], items = [] }) {
 
   if (view === 'detail') {
     const doc = orderDetail || selectedOrder;
+    const isDraft = doc?.docstatus === 0 || doc?.status === 'Draft' || !doc?.docstatus;
+    const extraActions = isDraft ? (
+      <div style={{ marginBottom: 12 }}>
+        <button
+          type="button"
+          className="btn btn-success btn-sm"
+          onClick={handleSubmitSalesOrder}
+          disabled={submittingSalesOrder}
+        >
+          {submittingSalesOrder ? (
+            <>
+              <Loader2 size={16} className="animate-spin" />
+              Submitting...
+            </>
+          ) : (
+            <>
+              <Check size={16} />
+              Submit Order
+            </>
+          )}
+        </button>
+      </div>
+    ) : null;
     return (
       <TransactionDetailLayout
         title="Sales Order Details"
@@ -339,6 +392,8 @@ function SalesOrderModule({ customers = [], items = [] }) {
         tax={doc?.total_taxes_and_charges}
         total={doc?.grand_total}
         formatDate={formatDate}
+        extraActions={extraActions}
+        pdfUrl={doc?.pdf_url}
       />
     );
   }

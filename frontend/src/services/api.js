@@ -1484,6 +1484,17 @@ export const createSalesOrder = async (data) => {
   return msg;
 };
 
+export const submitSalesOrder = async (name) => {
+  const response = await apiRequest('/method/fateh_pwa.pwa.submit_sales_order', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const msg = response?.message || response;
+  if (msg?.status === 'error') throw new Error(msg.message || 'Failed to submit sales order');
+  return msg;
+};
+
 /**
  * Get invoice details by invoice name
  * @param {string} invoiceName - Invoice name (e.g., "ACC-SINV-2025-00002")
@@ -2244,6 +2255,7 @@ export default {
   getSalesOrderList,
   getSalesOrderDetails,
   createSalesOrder,
+  submitSalesOrder,
   // Payment Entries
   createPayment,
   createPaymentEntry,

@@ -7,6 +7,7 @@ import {
   createQuotation,
   submitQuotation,
   getLeadList,
+  createLead,
   getItemDetails,
   searchItems,
 } from '../services/api';
@@ -49,6 +50,15 @@ function QuotationModule({ customers = [], items = [] }) {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submittingQuotation, setSubmittingQuotation] = useState(false);
+  const [showQuickLeadForm, setShowQuickLeadForm] = useState(false);
+  const [quickLeadFormData, setQuickLeadFormData] = useState({
+    first_name: '',
+    company_name: '',
+    email_id: '',
+    mobile_no: '',
+    source: 'Campaign',
+  });
+  const [submittingQuickLead, setSubmittingQuickLead] = useState(false);
 
   const getPriceValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) >= 0 ? parseFloat(v) : 0);
   const getQuantityValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) > 0 ? parseFloat(v) : 1);
@@ -329,6 +339,40 @@ function QuotationModule({ customers = [], items = [] }) {
     }
   };
 
+  const handleCreateQuickLead = async (e) => {
+    if (e && e.preventDefault) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (!quickLeadFormData.first_name && !quickLeadFormData.company_name) {
+      alert('Please fill in First Name or Company Name');
+      return;
+    }
+    setSubmittingQuickLead(true);
+    try {
+      const result = await createLead({
+        first_name: quickLeadFormData.first_name || quickLeadFormData.company_name || 'Lead',
+        company_name: quickLeadFormData.company_name || undefined,
+        email_id: quickLeadFormData.email_id || undefined,
+        mobile_no: quickLeadFormData.mobile_no || undefined,
+        source: quickLeadFormData.source,
+      });
+      const leadName = result.name;
+      if (!leadName) throw new Error('Lead created but name not returned');
+      await getLeadList({ limit: 200, offset: 0 }).then(({ leads: list }) => setLeads(Array.isArray(list) ? list : []));
+      setSelectedLeadName(leadName);
+      setPartySearch(quickLeadFormData.first_name || quickLeadFormData.company_name || leadName);
+      setShowPartyResults(false);
+      setShowQuickLeadForm(false);
+      setQuickLeadFormData({ first_name: '', company_name: '', email_id: '', mobile_no: '', source: 'Campaign' });
+      alert(`Lead "${leadName}" created and selected successfully!`);
+    } catch (err) {
+      alert(err.message || 'Failed to create lead');
+    } finally {
+      setSubmittingQuickLead(false);
+    }
+  };
+
   const handleSubmitCreate = async (e) => {
     e.preventDefault();
     if (!partyNameForApi.trim()) {
@@ -352,19 +396,30 @@ function QuotationModule({ customers = [], items = [] }) {
         rate: getPriceValue(i.price),
         uom: i.uom || i.stock_uom || 'Nos',
       }));
-      await createQuotation({
+      const result = await createQuotation({
         quotation_to: quotationTo,
         party_name: partyNameForApi,
         items: formattedItems,
       });
+      const quotationName = result.name || result.message?.name;
+      if (quotationName) {
+        // Fetch details and show detail view so user can submit and print
+        const detail = await getQuotationDetails(quotationName);
+        setSelectedQuotation({ name: quotationName });
+        setQuotationDetail(detail);
+        setView('detail');
+      } else {
+        // Fallback to list if name not returned
+        setView('list');
+        fetchList();
+      }
+      // Clear form after successful create
       setQuotationTo('Customer');
       setSelectedCustomer('');
       setSelectedLeadName('');
       setPartySearch('');
       setLineItems([]);
       setDiscountAmount('0');
-      setView('list');
-      fetchList();
     } catch (err) {
       alert(err.message || 'Failed to create quotation');
     } finally {
@@ -420,6 +475,7 @@ function QuotationModule({ customers = [], items = [] }) {
         total={doc?.grand_total}
         formatDate={formatDate}
         extraActions={extraActions}
+        pdfUrl={doc?.pdf_url}
       />
     );
   }
@@ -427,7 +483,19 @@ function QuotationModule({ customers = [], items = [] }) {
   if (view === 'create') {
     const partySelection = (
       <div className="form-group party-search-container" style={{ position: 'relative' }}>
-        <label className="form-label">Quotation To</label>
+        <div className="flex-between mb-4">
+          <label className="form-label" style={{ marginBottom: 0 }}>Quotation To</label>
+          {quotationTo === 'Lead' && !showQuickLeadForm && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setShowQuickLeadForm(true)}
+            >
+              <Plus size={16} />
+              Create New Lead
+            </button>
+          )}
+        </div>
         <select
           className="form-input mb-4"
           value={quotationTo}
@@ -437,11 +505,119 @@ function QuotationModule({ customers = [], items = [] }) {
             setSelectedLeadName('');
             setPartySearch('');
             setShowPartyResults(false);
+            setShowQuickLeadForm(false);
           }}
         >
           <option value="Customer">Customer</option>
           <option value="Lead">Lead</option>
         </select>
+        {showQuickLeadForm && quotationTo === 'Lead' && (
+          <div className="card mb-4" style={{ backgroundColor: 'var(--gray-50)', border: '1px solid var(--primary)' }}>
+            <div className="flex-between mb-4">
+              <h4 style={{ margin: 0, color: 'var(--primary)' }}>Quick Lead Creation</h4>
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary"
+                onClick={() => {
+                  setShowQuickLeadForm(false);
+                  setQuickLeadFormData({ first_name: '', company_name: '', email_id: '', mobile_no: '', source: 'Campaign' });
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+            <div>
+              <div className="grid grid-2 gap-4">
+                <div className="form-group">
+                  <label className="form-label">First Name *</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={quickLeadFormData.first_name}
+                    onChange={(e) => setQuickLeadFormData({ ...quickLeadFormData, first_name: e.target.value })}
+                    placeholder="First name"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Company Name</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={quickLeadFormData.company_name}
+                    onChange={(e) => setQuickLeadFormData({ ...quickLeadFormData, company_name: e.target.value })}
+                    placeholder="Company name"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Email</label>
+                  <input
+                    type="email"
+                    className="form-input"
+                    value={quickLeadFormData.email_id}
+                    onChange={(e) => setQuickLeadFormData({ ...quickLeadFormData, email_id: e.target.value })}
+                    placeholder="email@example.com"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Mobile</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={quickLeadFormData.mobile_no}
+                    onChange={(e) => setQuickLeadFormData({ ...quickLeadFormData, mobile_no: e.target.value })}
+                    placeholder="Mobile number"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Source</label>
+                  <select
+                    className="form-input"
+                    value={quickLeadFormData.source}
+                    onChange={(e) => setQuickLeadFormData({ ...quickLeadFormData, source: e.target.value })}
+                  >
+                    <option value="Campaign">Campaign</option>
+                    <option value="Cold Calling">Cold Calling</option>
+                    <option value="Existing Customer">Existing Customer</option>
+                    <option value="Partner">Partner</option>
+                    <option value="Website">Website</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-4">
+                <button
+                  type="button"
+                  className="btn btn-success"
+                  onClick={handleCreateQuickLead}
+                  disabled={submittingQuickLead}
+                >
+                  {submittingQuickLead ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Plus size={16} />
+                      Create Lead
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setShowQuickLeadForm(false);
+                    setQuickLeadFormData({ first_name: '', company_name: '', email_id: '', mobile_no: '', source: 'Campaign' });
+                  }}
+                  disabled={submittingQuickLead}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <label className="form-label">Select {quotationTo} *</label>
         <div style={{ position: 'relative' }}>
           <Search size={18} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none' }} />

@@ -2021,12 +2021,25 @@ def get_quotation_list():
 
 @frappe.whitelist(allow_guest=False, methods=["GET"])
 def get_quotation_details():
-    """Get a single Quotation by name."""
+    """Get a single Quotation by name with PDF URL."""
     name = frappe.form_dict.get("name")
     if not name or not frappe.db.exists("Quotation", name):
         return {"status": "error", "message": "Quotation not found"}
     doc = frappe.get_doc("Quotation", name)
-    return {"status": "ok", "quotation": doc.as_dict()}
+    base_url = frappe.utils.get_url()
+    print_format = frappe.utils.quote("Standard")
+    pdf_url = (
+        f"{base_url}/printview?"
+        f"doctype=Quotation"
+        f"&name={doc.name}"
+        f"&trigger_print=1"
+        f"&format={print_format}"
+        f"&no_letterhead=0"
+        f"&download=1"
+    )
+    result = doc.as_dict()
+    result["pdf_url"] = pdf_url
+    return {"status": "ok", "quotation": result}
 
 
 @frappe.whitelist(allow_guest=False, methods=["POST"])
@@ -2136,12 +2149,25 @@ def get_sales_order_list():
 
 @frappe.whitelist(allow_guest=False, methods=["GET"])
 def get_sales_order_details():
-    """Get a single Sales Order by name."""
+    """Get a single Sales Order by name with PDF URL."""
     name = frappe.form_dict.get("name")
     if not name or not frappe.db.exists("Sales Order", name):
         return {"status": "error", "message": "Sales Order not found"}
     doc = frappe.get_doc("Sales Order", name)
-    return {"status": "ok", "sales_order": doc.as_dict()}
+    base_url = frappe.utils.get_url()
+    print_format = frappe.utils.quote("Standard")
+    pdf_url = (
+        f"{base_url}/printview?"
+        f"doctype=Sales%20Order"
+        f"&name={doc.name}"
+        f"&trigger_print=1"
+        f"&format={print_format}"
+        f"&no_letterhead=0"
+        f"&download=1"
+    )
+    result = doc.as_dict()
+    result["pdf_url"] = pdf_url
+    return {"status": "ok", "sales_order": result}
 
 
 @frappe.whitelist(allow_guest=False, methods=["POST"])
@@ -2182,6 +2208,28 @@ def create_sales_order():
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Create Sales Order PWA Error")
         return {"status": "error", "message": str(e) or "Failed to create sales order"}
+
+
+@frappe.whitelist(allow_guest=False, methods=["POST"])
+def submit_sales_order():
+    """Submit a draft Sales Order (set docstatus = 1)."""
+    try:
+        name = frappe.form_dict.get("name")
+        if frappe.request.data:
+            data = json.loads(frappe.request.data)
+            name = data.get("name") or name
+        if not name or not frappe.db.exists("Sales Order", name):
+            return {"status": "error", "message": "Sales Order not found"}
+        doc = frappe.get_doc("Sales Order", name)
+        if doc.docstatus == 1:
+            return {"status": "ok", "message": "Sales Order already submitted", "name": doc.name}
+        if doc.docstatus == 2:
+            return {"status": "error", "message": "Cancelled sales order cannot be submitted"}
+        doc.submit()
+        return {"status": "ok", "message": "Sales Order submitted", "name": doc.name}
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Submit Sales Order PWA Error")
+        return {"status": "error", "message": str(e) or "Failed to submit sales order"}
 
 
 import json

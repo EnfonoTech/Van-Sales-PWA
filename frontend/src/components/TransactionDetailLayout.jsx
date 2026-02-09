@@ -27,6 +27,7 @@ export function TransactionDetailLayout({
   total,
   formatDate = (d) => (d ? new Date(d).toLocaleDateString() : '—'),
   extraActions,
+  pdfUrl,
 }) {
   return (
     <div className="sales-detail fade-in">
@@ -49,6 +50,18 @@ export function TransactionDetailLayout({
               </div>
             </div>
             <div className="text-right">
+              {pdfUrl && (
+                <div style={{ marginBottom: '12px' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={() => window.open(pdfUrl, '_blank')}
+                    title="Open PDF"
+                  >
+                    🖨️ Print
+                  </button>
+                </div>
+              )}
               {extraActions}
               <div className="text-sm text-gray-600">{dateLabel}</div>
               <div className="font-semibold">{formatDate(dateValue)}</div>
