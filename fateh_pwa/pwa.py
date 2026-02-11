@@ -2061,6 +2061,37 @@ def create_quotation():
         company = data.get("company") or _get_user_company()
         if not company:
             return {"status": "error", "message": "Company could not be determined"}
+        
+        # Get cost center
+        cost_center = _get_user_cost_center(company)
+        if not cost_center:
+            return {
+                "status": "error",
+                "message": "Cost Center could not be determined. Set User Permission (Cost Center) or Company default Cost Center."
+            }
+        
+        # Get tax template
+        tax_template = frappe.db.get_value(
+            "Sales Taxes and Charges Template",
+            {"company": company, "is_default": 1, "disabled": 0},
+            "name"
+        )
+        
+        if not tax_template:
+            return {
+                "status": "error",
+                "message": f"No default Sales Taxes and Charges Template for '{company}'"
+            }
+        
+        tpl = frappe.get_doc("Sales Taxes and Charges Template", tax_template)
+        tax_rows = [{
+            "charge_type": t.charge_type,
+            "account_head": t.account_head,
+            "description": t.description or f"Tax @ {t.rate}%",
+            "rate": t.rate,
+            "cost_center": cost_center
+        } for t in tpl.taxes]
+        
         doc = frappe.new_doc("Quotation")
         doc.quotation_to = quotation_to
         doc.party_name = party_name
@@ -2076,10 +2107,17 @@ def create_quotation():
                 "rate": flt(row.get("rate"), 0),
                 "uom": row.get("uom") or frappe.db.get_value("Item", row.get("item_code"), "stock_uom") or "Nos",
             })
-        doc.insert(ignore_permissions=False)
+        
+        # Add taxes
+        doc.taxes_and_charges = tax_template
+        for tax_row in tax_rows:
+            doc.append("taxes", tax_row)
+        
+        doc.set_missing_values()
         doc.run_method("set_taxes")
         doc.run_method("calculate_totals")
-        doc.save()
+        doc.insert(ignore_permissions=True)
+        frappe.db.commit()
         return {"status": "ok", "message": "Quotation created", "name": doc.name}
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Create Quotation PWA Error")
@@ -2186,6 +2224,37 @@ def create_sales_order():
         company = data.get("company") or _get_user_company()
         if not company:
             return {"status": "error", "message": "Company could not be determined"}
+        
+        # Get cost center
+        cost_center = _get_user_cost_center(company)
+        if not cost_center:
+            return {
+                "status": "error",
+                "message": "Cost Center could not be determined. Set User Permission (Cost Center) or Company default Cost Center."
+            }
+        
+        # Get tax template
+        tax_template = frappe.db.get_value(
+            "Sales Taxes and Charges Template",
+            {"company": company, "is_default": 1, "disabled": 0},
+            "name"
+        )
+        
+        if not tax_template:
+            return {
+                "status": "error",
+                "message": f"No default Sales Taxes and Charges Template for '{company}'"
+            }
+        
+        tpl = frappe.get_doc("Sales Taxes and Charges Template", tax_template)
+        tax_rows = [{
+            "charge_type": t.charge_type,
+            "account_head": t.account_head,
+            "description": t.description or f"Tax @ {t.rate}%",
+            "rate": t.rate,
+            "cost_center": cost_center
+        } for t in tpl.taxes]
+        
         doc = frappe.new_doc("Sales Order")
         doc.customer = customer
         doc.company = company
@@ -2200,10 +2269,17 @@ def create_sales_order():
                 "rate": flt(row.get("rate"), 0),
                 "uom": row.get("uom") or frappe.db.get_value("Item", row.get("item_code"), "stock_uom") or "Nos",
             })
-        doc.insert(ignore_permissions=False)
+        
+        # Add taxes
+        doc.taxes_and_charges = tax_template
+        for tax_row in tax_rows:
+            doc.append("taxes", tax_row)
+        
+        doc.set_missing_values()
         doc.run_method("set_taxes")
         doc.run_method("calculate_totals")
-        doc.save()
+        doc.insert(ignore_permissions=True)
+        frappe.db.commit()
         return {"status": "ok", "message": "Sales Order created", "name": doc.name}
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Create Sales Order PWA Error")
