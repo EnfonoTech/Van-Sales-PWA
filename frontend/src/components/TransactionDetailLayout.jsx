@@ -110,7 +110,7 @@ export function TransactionDetailLayout({
                   return (
                     <tr key={item.code || item.item_code || index}>
                       <td className="font-semibold">{item.code || item.item_code}</td>
-                      <td>{item.name || item.item_name}</td>
+                      <td>{item.item_name || item.name || '—'}</td>
                       <td>{qty}</td>
                       <td>{item.uom || 'Nos'}</td>
                       <td><SARSymbol size={16} /> {Number(rate).toFixed(2)}</td>

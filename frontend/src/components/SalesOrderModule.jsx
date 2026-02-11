@@ -487,6 +487,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
     try {
       const formattedItems = lineItems.map((i) => ({
         item_code: i.code,
+        item_name: i.name || i.item_name || '',
         qty: getQuantityValue(i.quantity),
         rate: getPriceValue(i.price),
         uom: i.uom || i.stock_uom || 'Nos',
@@ -596,6 +597,16 @@ function SalesOrderModule({ customers = [], items = [] }) {
   const listToShow = listSearch.trim() ? listSearchResults : salesOrders;
   const isSearchingList = !!listSearch.trim();
 
+  // Error Dialog - render at top level so it's always visible
+  const errorDialogElement = (
+    <ErrorDialog
+      isOpen={errorDialog.isOpen}
+      onClose={() => setErrorDialog({ isOpen: false, title: '', message: '' })}
+      title={errorDialog.title}
+      message={errorDialog.message}
+    />
+  );
+
   if (view === 'detail') {
     const doc = orderDetail || selectedOrder;
     const isDraft = doc?.docstatus === 0 || doc?.status === 'Draft' || !doc?.docstatus;
@@ -654,7 +665,9 @@ function SalesOrderModule({ customers = [], items = [] }) {
         )}
       </div>
     );
+
     return (
+      <>
       <TransactionDetailLayout
         title="Sales Order Details"
         docName={doc?.name}
@@ -677,6 +690,8 @@ function SalesOrderModule({ customers = [], items = [] }) {
         extraActions={extraActions}
         pdfUrl={doc?.pdf_url}
       />
+      {errorDialogElement}
+      </>
     );
   }
 
@@ -798,6 +813,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
     );
 
     return (
+      <>
       <TransactionFormLayout
         title={editingSalesOrder ? `Edit Sales Order ${editingSalesOrder}` : "New Sales Order"}
         backLabel="Back to Sales Orders"
@@ -822,10 +838,13 @@ function SalesOrderModule({ customers = [], items = [] }) {
         submitLabel="Save Sales Order"
         disabledSubmit={loadingItem}
       />
+      {errorDialogElement}
+      </>
     );
   }
 
   return (
+    <>
     <div className="sales-list fade-in">
       <div className="flex-between mb-6">
         <h1>Sales Orders</h1>
@@ -923,15 +942,9 @@ function SalesOrderModule({ customers = [], items = [] }) {
           </div>
         </div>
       )}
-      
-      {/* Error Dialog */}
-      <ErrorDialog
-        isOpen={errorDialog.isOpen}
-        onClose={() => setErrorDialog({ isOpen: false, title: '', message: '' })}
-        title={errorDialog.title}
-        message={errorDialog.message}
-      />
     </div>
+    {errorDialogElement}
+    </>
   );
 }
 

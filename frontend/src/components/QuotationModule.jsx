@@ -585,6 +585,7 @@ function QuotationModule({ customers = [], items = [] }) {
     try {
       const formattedItems = lineItems.map((i) => ({
         item_code: i.code,
+        item_name: i.name || i.item_name || '',
         qty: getQuantityValue(i.quantity),
         rate: getPriceValue(i.price),
         uom: i.uom || i.stock_uom || 'Nos',
@@ -695,6 +696,16 @@ function QuotationModule({ customers = [], items = [] }) {
   const listToShow = listSearch.trim() ? listSearchResults : quotations;
   const isSearchingList = !!listSearch.trim();
 
+  // Error Dialog - render at top level so it's always visible (including list view)
+  const errorDialogElement = (
+    <ErrorDialog
+      isOpen={errorDialog.isOpen}
+      onClose={() => setErrorDialog({ isOpen: false, title: '', message: '' })}
+      title={errorDialog.title}
+      message={errorDialog.message}
+    />
+  );
+
   if (view === 'detail') {
     const doc = quotationDetail || selectedQuotation;
     const isDraft = doc?.docstatus === 0 || doc?.status === 'Draft' || !doc?.docstatus;
@@ -753,7 +764,9 @@ function QuotationModule({ customers = [], items = [] }) {
         )}
       </div>
     );
+
     return (
+      <>
       <TransactionDetailLayout
         title="Quotation Details"
         docName={doc?.name}
@@ -776,6 +789,8 @@ function QuotationModule({ customers = [], items = [] }) {
         extraActions={extraActions}
         pdfUrl={doc?.pdf_url}
       />
+      {errorDialogElement}
+      </>
     );
   }
 
@@ -1047,6 +1062,7 @@ function QuotationModule({ customers = [], items = [] }) {
     );
 
     return (
+      <>
       <TransactionFormLayout
         title={editingQuotation ? `Edit Quotation ${editingQuotation}` : "New Quotation"}
         backLabel="Back to Quotations"
@@ -1071,10 +1087,13 @@ function QuotationModule({ customers = [], items = [] }) {
         submitLabel="Save Quotation"
         disabledSubmit={loadingItem}
       />
+      {errorDialogElement}
+      </>
     );
   }
 
   return (
+    <>
     <div className="sales-list fade-in">
       <div className="flex-between mb-6">
         <h1>Quotations</h1>
@@ -1172,15 +1191,9 @@ function QuotationModule({ customers = [], items = [] }) {
           </div>
         </div>
       )}
-      
-      {/* Error Dialog */}
-      <ErrorDialog
-        isOpen={errorDialog.isOpen}
-        onClose={() => setErrorDialog({ isOpen: false, title: '', message: '' })}
-        title={errorDialog.title}
-        message={errorDialog.message}
-      />
     </div>
+    {errorDialogElement}
+    </>
   );
 }
 

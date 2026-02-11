@@ -2039,6 +2039,10 @@ def get_quotation_details():
     )
     result = doc.as_dict()
     result["pdf_url"] = pdf_url
+    # Ensure each item has item_name for display (Frappe may not always include it in as_dict)
+    for row in result.get("items") or []:
+        if not row.get("item_name") and row.get("item_code"):
+            row["item_name"] = frappe.db.get_value("Item", row["item_code"], "item_name") or row["item_code"]
     return {"status": "ok", "quotation": result}
 
 
@@ -2205,6 +2209,10 @@ def get_sales_order_details():
     )
     result = doc.as_dict()
     result["pdf_url"] = pdf_url
+    # Ensure each item has item_name for display (Frappe may not always include it in as_dict)
+    for row in result.get("items") or []:
+        if not row.get("item_name") and row.get("item_code"):
+            row["item_name"] = frappe.db.get_value("Item", row["item_code"], "item_name") or row["item_code"]
     return {"status": "ok", "sales_order": result}
 
 
