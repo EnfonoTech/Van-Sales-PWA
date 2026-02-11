@@ -10,6 +10,8 @@ import {
   getSalesInvoiceList
 } from '../services/api';
 import SARSymbol from './SARSymbol';
+import SuccessDialog from './SuccessDialog';
+import ErrorDialog from './ErrorDialog';
 
 function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers }) {
   const [view, setView] = useState('list'); // 'list', 'create', 'detail'
@@ -42,6 +44,8 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('Credit');
   const [createPayment, setCreatePayment] = useState(false);
+  const [successDialog, setSuccessDialog] = useState({ isOpen: false, title: '', message: '' });
+  const [errorDialog, setErrorDialog] = useState({ isOpen: false, title: '', message: '' });
 
   // Fetch returns list
   const fetchReturns = async () => {
@@ -254,7 +258,11 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
       const result = await createSalesReturn(returnData);
       
       if (result && result.return_invoice) {
-        alert('Return created successfully!');
+        setSuccessDialog({
+          isOpen: true,
+          title: 'Success',
+          message: 'Return created successfully!'
+        });
         // Reset form
         setSelectedInvoice('');
         setInvoiceDetails(null);
@@ -265,11 +273,19 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
         setView('list');
         fetchReturns();
       } else {
-        alert('Failed to create return. Please try again.');
+        setErrorDialog({
+          isOpen: true,
+          title: 'Error',
+          message: 'Failed to create return. Please try again.'
+        });
       }
     } catch (error) {
       console.error('Error creating return:', error);
-      alert('Error creating return: ' + (error.message || 'Unknown error'));
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error Creating Return',
+        message: error.message || 'Unknown error'
+      });
     } finally {
       setSubmitting(false);
     }
@@ -305,7 +321,11 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
       const returnName = selectedReturn.name || selectedReturn.return_invoice || selectedReturn.id;
       const result = await submitSalesReturn(returnName, createPayment, paymentMethod);
       
-      alert('Return submitted successfully!');
+      setSuccessDialog({
+        isOpen: true,
+        title: 'Success',
+        message: 'Return submitted successfully!'
+      });
       setShowSubmitModal(false);
       setCreatePayment(false);
       setPaymentMethod('Credit');
@@ -319,18 +339,40 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
       fetchReturns();
     } catch (error) {
       console.error('Error submitting return:', error);
-      alert('Error submitting return: ' + (error.message || 'Unknown error'));
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error Submitting Return',
+        message: error.message || 'Unknown error'
+      });
     } finally {
       setSubmittingReturn(false);
     }
   };
 
   // Detail View
+  const successDialogEl = (
+    <SuccessDialog
+      isOpen={successDialog.isOpen}
+      onClose={() => setSuccessDialog({ isOpen: false, title: '', message: '' })}
+      title={successDialog.title}
+      message={successDialog.message}
+    />
+  );
+  const errorDialogEl = (
+    <ErrorDialog
+      isOpen={errorDialog.isOpen}
+      onClose={() => setErrorDialog({ isOpen: false, title: '', message: '' })}
+      title={errorDialog.title}
+      message={errorDialog.message}
+    />
+  );
+
   if (view === 'detail' && selectedReturn) {
     const returnData = returnDetail || selectedReturn;
     const isDraft = (returnData.docstatus === 0 || returnData.status === 'Draft');
     
     return (
+      <>
       <div className="return-detail fade-in">
         <div className="flex-between mb-6">
           <h1>Return Details</h1>
@@ -518,12 +560,16 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
           </>
         )}
       </div>
+      {successDialogEl}
+      {errorDialogEl}
+      </>
     );
   }
 
   // Create View
   if (view === 'create') {
     return (
+      <>
       <div className="return-create fade-in">
         <div className="flex-between mb-6">
           <h1>New Sales Return</h1>
@@ -912,11 +958,15 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
           )}
         </form>
       </div>
+      {successDialogEl}
+      {errorDialogEl}
+      </>
     );
   }
 
   // List View
   return (
+    <>
     <div className="return-list fade-in">
       <div className="flex-between mb-6">
         <h1>Sales Returns</h1>
@@ -988,6 +1038,9 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
         </div>
       )}
     </div>
+    {successDialogEl}
+    {errorDialogEl}
+    </>
   );
 }
 

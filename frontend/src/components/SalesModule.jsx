@@ -1603,10 +1603,10 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                     </table>
                   </div>
 
-                  {/* Payment Method Selection for Included Payment */}
+                  {/* Payment Method Selection */}
                   <div className="form-group mt-4" style={{ padding: '16px', background: 'var(--gray-50)', borderRadius: 'var(--radius-lg)' }}>
                     <label className="form-label" style={{ marginBottom: '8px' }}>
-                      Payment Method (Optional - Include Payment)
+                      Payment Method
                     </label>
                     <select
                       className="form-select"
@@ -1614,7 +1614,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                       onChange={(e) => setSelectedPaymentMethod(e.target.value)}
                       style={{ width: '100%', maxWidth: '400px' }}
                     >
-                      <option value="">-- Select Payment Method (Optional) --</option>
+                      <option value="">Credit</option>
                       {paymentMethods.map((method) => (
                         <option key={method} value={method}>
                           {method}
@@ -1744,6 +1744,25 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                   )}
                 </div>
               </div>
+
+              {/* Payment Method (when included) */}
+              {(invoice.is_pos && invoice.payments && invoice.payments.length > 0) ? (
+                <div className="mb-4">
+                  <h3 className="mb-2" style={{ fontSize: '1rem', color: 'var(--gray-700)' }}>Payment Method</h3>
+                  <div style={{ background: 'var(--gray-50)', padding: '16px', borderRadius: 'var(--radius)' }}>
+                    <div className="font-semibold">
+                      {invoice.payments.map((p) => p.mode_of_payment).filter(Boolean).join(', ') || '—'}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mb-4">
+                  <h3 className="mb-2" style={{ fontSize: '1rem', color: 'var(--gray-700)' }}>Payment Method</h3>
+                  <div style={{ background: 'var(--gray-50)', padding: '16px', borderRadius: 'var(--radius)' }}>
+                    <div className="font-semibold">Credit</div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Invoice Items */}
