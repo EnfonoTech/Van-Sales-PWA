@@ -718,8 +718,70 @@ function CustomerModule({ customers, sales, payments, onAddCustomer, loadingCust
     const totalSales = customerSales.reduce((sum, s) => sum + (s.total || s.amount || 0), 0);
     const totalPayments = customerPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
-    const handlePrint = () => {
-      window.print();
+    const handlePrint = async () => {
+      if (!selectedCustomer) {
+        alert('Please select a customer first');
+        return;
+      }
+
+      try {
+        // Fetch company from user permission API
+        const companyResponse = await fetch('/api/method/fateh_pwa.pwa.get_user_company', {
+          method: 'GET',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        });
+        
+        const companyData = await companyResponse.json();
+        const company = companyData?.message?.company || companyData?.company;
+        
+        if (!company) {
+          alert('Company not found. Please ensure your user has a company assigned in User Permissions or user defaults.');
+          return;
+        }
+
+        // Build report URL with filters for Accounts Receivable report
+        const reportName = 'Accounts Receivable';
+        
+        // Calculate report date (use endDate if set, otherwise today)
+        const today = new Date();
+        const reportDate = endDate || today.toISOString().split('T')[0];
+
+        // Build query string with filters matching the format:
+        // /app/query-report/Accounts%20Receivable?company=test&report_date=2026-02-11&party_type=Customer&party=["34567890"]&...
+        const queryParams = new URLSearchParams();
+        queryParams.append('company', company);
+        queryParams.append('report_date', reportDate);
+        queryParams.append('party_type', 'Customer');
+        
+        // Party needs to be JSON encoded array: ["customer_name"] then URL encoded
+        const partyArray = JSON.stringify([selectedCustomer.name]);
+        queryParams.append('party', partyArray);
+        
+        // Set default ageing filters
+        queryParams.append('ageing_based_on', 'Due Date');
+        queryParams.append('calculate_ageing_with', 'Report Date');
+        queryParams.append('range', '30, 60, 90, 120');
+
+        // Get base URL (same origin)
+        const baseUrl = window.location.origin;
+        
+        // Encode report name: spaces become %20
+        const encodedReportName = encodeURIComponent(reportName);
+        
+        // Build the report URL
+        // Format: /app/query-report/{encoded_report_name}?{query_params}
+        const reportUrl = `${baseUrl}/app/query-report/${encodedReportName}?${queryParams.toString()}`;
+        
+        // Open report in the same window - Frappe will show the report with Print/PDF buttons
+        // User can click Print or PDF button from the report page
+        window.location.href = reportUrl;
+      } catch (error) {
+        console.error('Error opening print:', error);
+        alert('Error opening print. Please try again.');
+      }
     };
 
     return (
