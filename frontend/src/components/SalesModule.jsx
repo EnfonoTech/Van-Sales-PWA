@@ -406,19 +406,19 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
             initialPrice = priceListRate * cartonConversion.conversion_factor;
           }
         }
-        
+        const roundPrice = (v) => (Math.round(Number(v) * 100) / 100).toFixed(2);
         const newItem = {
           code: itemDetails?.code || item.code,
           name: itemDetails?.name || item.name,
-          price: initialPrice.toString(), // Converted price based on default UOM
-          price_list_rate: priceListRate, // Store original price_list_rate (per Nos/stock_uom)
+          price: roundPrice(initialPrice), // 2 decimal places
+          price_list_rate: Number(roundPrice(priceListRate)), // Store original (per Nos/stock_uom)
           uom: defaultUOM, // Default to sales_uom
           stock_uom: itemDetails?.stock_uom || 'Nos', // Store original stock_uom from API
           sales_uom: itemDetails?.sales_uom || itemDetails?.stock_uom || 'Nos', // Store original sales_uom from API
           uom_conversions: uomConversions, // Store conversion factors
           stock: actualQty,
           quantity: baseQuantity.toString(),
-          originalPrice: priceListRate // Store original for reference
+          originalPrice: Number(roundPrice(priceListRate)) // Store original for reference
         };
         setInvoiceItems([...invoiceItems, newItem]);
       } catch (error) {
@@ -437,19 +437,19 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
             initialPrice = basePrice * cartonConversion.conversion_factor;
           }
         }
-        
+        const roundPriceFallback = (v) => (Math.round(Number(v) * 100) / 100).toFixed(2);
         const newItem = {
           code: item.code,
           name: item.name,
-          price: initialPrice.toString(), // Converted price based on default UOM
-          price_list_rate: basePrice,
+          price: roundPriceFallback(initialPrice), // 2 decimal places
+          price_list_rate: Number(roundPriceFallback(basePrice)),
           uom: defaultUOM, // Default to sales_uom
           stock_uom: item.stock_uom || 'Nos',
           sales_uom: item.sales_uom || item.stock_uom || 'Nos',
           uom_conversions: uomConversions,
           stock: item.stock || 0,
           quantity: (item.quantity || 1).toString(),
-          originalPrice: basePrice
+          originalPrice: Number(roundPriceFallback(basePrice))
         };
         setInvoiceItems([...invoiceItems, newItem]);
       } finally {
@@ -501,8 +501,8 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
           // If already at target UOM or unknown conversion, keep current price
           newPrice = currentPrice;
         }
-        
-        return { ...item, uom: value, price: newPrice.toString() };
+        const rounded = (Math.round(Number(newPrice) * 100) / 100).toFixed(2);
+        return { ...item, uom: value, price: rounded };
       }
       return item;
     }));
@@ -697,19 +697,23 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
     try {
       const details = await getInvoiceDetails(invoiceName);
 
-      // Map items into create-form structure
-      const itemsForForm = (details.items || []).map(item => ({
-        code: item.code || item.item_code,
-        name: item.name || item.item_name,
-        price: (item.price ?? item.rate ?? 0).toString(),
-        uom: item.uom || item.sales_uom || item.stock_uom || 'Nos',
-        stock_uom: item.stock_uom || item.uom || 'Nos',
-        sales_uom: item.sales_uom || item.uom || 'Nos',
-        uom_conversions: item.uom_conversions || [],
-        stock: item.stock ?? 0,
-        quantity: (item.quantity ?? item.qty ?? 1).toString(),
-        originalPrice: item.price_list_rate ?? item.price ?? item.rate ?? 0
-      }));
+      // Map items into create-form structure; price limited to 2 decimal places
+      const to2 = (v) => (Math.round(Number(v) * 100) / 100).toFixed(2);
+      const itemsForForm = (details.items || []).map(item => {
+        const p = item.price ?? item.rate ?? 0;
+        return {
+          code: item.code || item.item_code,
+          name: item.name || item.item_name,
+          price: to2(p),
+          uom: item.uom || item.sales_uom || item.stock_uom || 'Nos',
+          stock_uom: item.stock_uom || item.uom || 'Nos',
+          sales_uom: item.sales_uom || item.uom || 'Nos',
+          uom_conversions: item.uom_conversions || [],
+          stock: item.stock ?? 0,
+          quantity: (item.quantity ?? item.qty ?? 1).toString(),
+          originalPrice: Number(to2(item.price_list_rate ?? item.price ?? item.rate ?? 0))
+        };
+      });
 
       // Set customer (SalesModule expects selectedCustomer as customer.id)
       const foundCustomer = customers.find(c => c.name === details.customerName || c.name === details.customer || c.id === details.customerId);
@@ -920,9 +924,10 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
 
     const today = new Date().toISOString().split('T')[0];
     
-    // Prepare invoice data in UI format (will be transformed by API service)
+    // Prepare invoice data in UI format (will be transformed by API service); price to 2 decimals
+    const round2 = (v) => Math.round(Number(v) * 100) / 100;
     const formattedItems = invoiceItems.map(item => {
-      const price = getPriceValue(item.price);
+      const price = round2(getPriceValue(item.price));
       const quantity = getQuantityValue(item.quantity);
       const selectedUOM = item.uom || item.stock_uom || 'Nos';
       return {
@@ -930,7 +935,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         name: item.name,
         quantity,
         price,
-        total: price * quantity,
+        total: round2(price * quantity),
         uom: selectedUOM,
         sales_uom: selectedUOM, // Set to selected UOM
         stock_uom: selectedUOM // Set to selected UOM

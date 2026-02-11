@@ -375,12 +375,13 @@ const transformInvoiceToAPI = (uiInvoice) => {
     discount_amount: parseFloat(uiInvoice.discount_amount || uiInvoice.discount || 0),
     items: (uiInvoice.items || []).map(item => {
       const selectedUOM = item.uom || item.sales_uom || item.stock_uom || 'Nos';
+      const rate = Math.round(parseFloat(item.price || item.rate || 0) * 100) / 100;
       return {
         item_code: item.code || item.item_code,
         item_name: item.name || item.item_name,
         description: item.description || '',
         qty: item.quantity || item.qty || 1,
-        rate: parseFloat(item.price || item.rate || 0),
+        rate,
         uom: selectedUOM, // Include uom field set to selected UOM
         sales_uom: selectedUOM, // Include sales_uom set to selected UOM
         stock_uom: selectedUOM, // Include stock_uom set to selected UOM
@@ -427,15 +428,16 @@ const buildPartialInvoiceUpdate = (uiInvoice) => {
     payload.payments = uiInvoice.payments;
   }
 
-  // Items
+  // Items (rate to 2 decimal places)
   if (Array.isArray(uiInvoice.items)) {
     payload.items = uiInvoice.items.map(item => {
       const selectedUOM = item.uom || item.sales_uom || item.stock_uom || 'Nos';
+      const rate = Math.round(parseFloat(item.price || item.rate || 0) * 100) / 100;
       return {
         item_code: item.code || item.item_code,
         item_name: item.name || item.item_name,
         qty: item.quantity || item.qty || 1,
-        rate: parseFloat(item.price || item.rate || 0),
+        rate,
         uom: selectedUOM,
         sales_uom: selectedUOM,
         stock_uom: selectedUOM

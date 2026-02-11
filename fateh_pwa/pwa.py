@@ -343,7 +343,7 @@ def get_items_list():
                         "price_list_rate"
                     )
 
-                rates[uom] = flt(rate or 0)
+                rates[uom] = flt(rate or 0, 2)
 
             # attach rates without breaking structure
             item["rates"] = rates
@@ -600,18 +600,16 @@ from frappe.utils import flt
 def get_item_details():
     """
     Frontend sends:
-        ?item_code=XXX&customer=Customer ID or Arabic Name or English Name
+        ?item_code=XXX  (customer optional; not used for price lookup)
 
     Backend:
-        - Resolves ONLY ENABLED Customer
-        - Converts to Customer ID for Item Price
-        - No User Permission warehouse logic
-        - Stock from Item Default warehouse, else all warehouses
+        - Price from Price List (Standard Selling) only; does NOT use customer in Item Price.
+        - Stock from Item Default warehouse, else all warehouses.
     """
 
     try:
         item_code = frappe.form_dict.get("item_code")
-        customer_param = frappe.form_dict.get("customer")  # ID or name
+        customer_param = frappe.form_dict.get("customer")  # optional; not used for price
         logged_user = frappe.session.user
 
         # -----------------------------
@@ -620,45 +618,31 @@ def get_item_details():
         if not item_code:
             return {"status": "error", "message": "item_code is required"}
 
-        if not customer_param:
-            return {"status": "error", "message": "customer is required"}
-
         if not frappe.db.exists("Item", item_code):
             return {"status": "error", "message": f"Item '{item_code}' not found"}
 
         # ------------------------------------------------
-        # ✅ RESOLVE ENABLED CUSTOMER ID ONLY
+        # RESOLVE CUSTOMER (OPTIONAL – for response only, not for price)
         # ------------------------------------------------
         customer = None
-
-        # 1. Match by ID (name)
-        customer = frappe.db.get_value(
-            "Customer",
-            {"name": customer_param, "disabled": 0},
-            "name"
-        )
-
-        # 2. Match by customer_name (Arabic)
-        if not customer:
+        if customer_param:
             customer = frappe.db.get_value(
                 "Customer",
-                {"customer_name": customer_param, "disabled": 0},
+                {"name": customer_param, "disabled": 0},
                 "name"
             )
-
-        # 3. Match by Arabic name (custom field)
-        if not customer:
-            customer = frappe.db.get_value(
-                "Customer",
-                {"custom_customer_name_arabic": customer_param, "disabled": 0},
-                "name"
-            )
-
-        if not customer:
-            return {
-                "status": "error",
-                "message": f"Active customer '{customer_param}' not found"
-            }
+            if not customer:
+                customer = frappe.db.get_value(
+                    "Customer",
+                    {"customer_name": customer_param, "disabled": 0},
+                    "name"
+                )
+            if not customer:
+                customer = frappe.db.get_value(
+                    "Customer",
+                    {"custom_customer_name_arabic": customer_param, "disabled": 0},
+                    "name"
+                )
 
         item = frappe.get_doc("Item", item_code)
 
@@ -716,15 +700,15 @@ def get_item_details():
                 )
 
         # ------------------------------------------------
-        # ITEM PRICES (DISPLAY)
+        # ITEM PRICES (FROM PRICE LIST ONLY – NO CUSTOMER)
         # ------------------------------------------------
         item_prices = frappe.get_all(
             "Item Price",
-            filters={
-                "item_code": item_code,
-                "price_list": "Standard Selling",
-                "customer": customer
-            },
+            filters=[
+                ["item_code", "=", item_code],
+                ["price_list", "=", "Standard Selling"],
+                ["customer", "is", "not set"],
+            ],
             fields=[
                 "price_list",
                 "price_list_rate",
@@ -741,58 +725,36 @@ def get_item_details():
         )
 
         # ------------------------------------------------
-        # RATES (OWNER → CUSTOMER FALLBACK)
+        # RATES FROM PRICE LIST ONLY (no customer in Item Price)
         # ------------------------------------------------
         rates = {}
-
         for uom in uoms:
             rate = None
-
-            # 1️⃣ Latest by logged-in user
+            # Item Price: price_list + item + uom, customer not set (blank)
             price_row = frappe.get_all(
                 "Item Price",
-                filters={
-                    "item_code": item_code,
-                    "price_list": "Standard Selling",
-                    "uom": uom,
-                    "customer": customer,
-                    "owner": logged_user
-                },
+                filters=[
+                    ["item_code", "=", item_code],
+                    ["price_list", "=", "Standard Selling"],
+                    ["uom", "=", uom],
+                    ["customer", "is", "not set"],
+                ],
                 fields=["price_list_rate"],
                 order_by="modified desc, creation desc",
                 limit_page_length=1
             )
-
             if price_row:
                 rate = price_row[0].price_list_rate
-
-            # 2️⃣ Fallback any owner
-            if rate is None:
-                price_row = frappe.get_all(
-                    "Item Price",
-                    filters={
-                        "item_code": item_code,
-                        "price_list": "Standard Selling",
-                        "uom": uom,
-                        "customer": customer
-                    },
-                    fields=["price_list_rate"],
-                    order_by="modified desc, creation desc",
-                    limit_page_length=1
-                )
-
-                if price_row:
-                    rate = price_row[0].price_list_rate
-
-            rates[uom] = flt(rate or 0)
+            rates[uom] = flt(rate or 0, 2)
 
         # ------------------------------------------------
-        # STANDARD RATE
+        # STANDARD RATE (2 decimal places)
         # ------------------------------------------------
-        standard_rate = (
+        standard_rate = flt(
             rates.get(item.sales_uom)
             or rates.get(item.stock_uom)
-            or flt(item.standard_rate)
+            or flt(item.standard_rate),
+            2,
         )
 
         # ------------------------------------------------
@@ -814,14 +776,17 @@ def get_item_details():
                 "description": item.description,
                 "is_stock_item": item.is_stock_item,
                 "is_sales_item": item.is_sales_item,
-                "valuation_rate": item.valuation_rate,
+                "valuation_rate": flt(item.valuation_rate, 2),
                 "standard_rate": standard_rate,
                 "disabled": item.disabled,
 
                 "rates": rates,
                 "uom_conversions": uom_conversions,
                 "stock_levels": stock_levels,
-                "item_prices": item_prices,
+                "item_prices": [
+                    {**ip, "price_list_rate": flt(ip.get("price_list_rate"), 2)}
+                    for ip in (item_prices or [])
+                ],
 
                 "creation": str(item.creation),
                 "modified": str(item.modified)
@@ -2108,7 +2073,7 @@ def create_quotation():
             doc.append("items", {
                 "item_code": row.get("item_code"),
                 "qty": flt(row.get("qty"), 1),
-                "rate": flt(row.get("rate"), 0),
+                "rate": flt(row.get("rate"), 2),
                 "uom": row.get("uom") or frappe.db.get_value("Item", row.get("item_code"), "stock_uom") or "Nos",
             })
         
@@ -2274,7 +2239,7 @@ def create_sales_order():
             doc.append("items", {
                 "item_code": row.get("item_code"),
                 "qty": flt(row.get("qty"), 1),
-                "rate": flt(row.get("rate"), 0),
+                "rate": flt(row.get("rate"), 2),
                 "uom": row.get("uom") or frappe.db.get_value("Item", row.get("item_code"), "stock_uom") or "Nos",
             })
         
@@ -2441,7 +2406,7 @@ def update_quotation():
                 doc.append("items", {
                     "item_code": item.get("item_code"),
                     "qty": flt(item.get("qty", 1)),
-                    "rate": flt(item.get("rate", 0)),
+                    "rate": flt(item.get("rate", 0), 2),
                     "uom": item.get("uom", "Nos"),
                 })
         
@@ -2505,7 +2470,7 @@ def update_sales_order():
                 doc.append("items", {
                     "item_code": item.get("item_code"),
                     "qty": flt(item.get("qty", 1)),
-                    "rate": flt(item.get("rate", 0)),
+                    "rate": flt(item.get("rate", 0), 2),
                     "uom": item.get("uom", "Nos"),
                 })
         
@@ -2772,7 +2737,7 @@ def create_sales_invoice():
                 "item_name": item.get("item_name"),
                 "description": item.get("description"),
                 "qty": flt(item.get("qty", 1)),
-                "rate": flt(item.get("rate", 0)),
+                "rate": flt(item.get("rate", 0), 2),
                 "uom": uom,
                 "stock_uom": stock_uom,
                 "conversion_factor": get_conversion_factor(item["item_code"], uom),
@@ -3241,7 +3206,7 @@ def update_sales_invoice():
                 row = {
                     "item_code": item.get("item_code"),
                     "qty": flt(item.get("qty", 1)),
-                    "rate": flt(item.get("rate", 0)),
+                    "rate": flt(item.get("rate", 0), 2),
                     "uom": item.get("uom", "Nos"),
                     "income_account": company_doc.default_income_account,
                     "cost_center": update_cost_center
