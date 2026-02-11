@@ -4573,11 +4573,16 @@ def get_today_sales():
                 AND owner = %s
         """, (today, current_user), as_dict=True)[0]
 
+        invoice_count = cint(data.invoice_count or 0)
+        total_sales = flt(data.total_sales or 0)
         return {
             "status": "success",
             "date": today,
-            "amount": data.total_sales or 0,
-            "invoices": data.invoice_count or 0
+            "amount": total_sales,
+            "total": total_sales,
+            "count": invoice_count,
+            "invoice_count": invoice_count,
+            "invoices": invoice_count
         }
 
     except Exception as e:
@@ -4591,29 +4596,49 @@ def get_today_sales():
 
 @frappe.whitelist(allow_guest=False, methods=["GET"])
 def get_today_collection():
-    """Today's total collection (logged-in user only)"""
-
+    """
+    Today's total collection (logged-in user only).
+    Includes both Payment Entry and included payments on Sales Invoices.
+    No filter by mode of payment — shows all.
+    """
     try:
         today = frappe.utils.today()
         current_user = frappe.session.user
 
-        data = frappe.db.sql("""
+        # Payment Entry (receive, today, submitted, owner)
+        pe_data = frappe.db.sql("""
             SELECT
-                COUNT(name) AS payment_count,
-                SUM(paid_amount) AS total_collection
-            FROM `tabPayment Entry`
-            WHERE
-                posting_date = %s
-                AND docstatus = 1
-                AND payment_type = 'Receive'
-                AND owner = %s
+                COUNT(pe.name) AS payment_count,
+                COALESCE(SUM(pe.paid_amount), 0) AS total_collection
+            FROM `tabPayment Entry` pe
+            WHERE pe.posting_date = %s
+                AND pe.docstatus = 1
+                AND pe.payment_type = 'Receive'
+                AND pe.owner = %s
         """, (today, current_user), as_dict=True)[0]
+
+        # Included payments on Sales Invoices (today, submitted, owner)
+        si_data = frappe.db.sql("""
+            SELECT
+                COUNT(sip.name) AS payment_count,
+                COALESCE(SUM(sip.amount), 0) AS total_collection
+            FROM `tabSales Invoice Payment` sip
+            INNER JOIN `tabSales Invoice` si ON si.name = sip.parent
+            WHERE si.posting_date = %s
+                AND si.docstatus = 1
+                AND si.owner = %s
+        """, (today, current_user), as_dict=True)[0]
+
+        total_amount = flt(pe_data.total_collection or 0) + flt(si_data.total_collection or 0)
+        total_count = cint(pe_data.payment_count or 0) + cint(si_data.payment_count or 0)
 
         return {
             "status": "success",
             "date": today,
-            "amount": data.total_collection or 0,
-            "payments": data.payment_count or 0
+            "amount": total_amount,
+            "total": total_amount,
+            "payments": total_count,
+            "payment_count": total_count
         }
 
     except Exception as e:
@@ -4628,30 +4653,51 @@ def get_today_collection():
 
 @frappe.whitelist(allow_guest=False, methods=["GET"])
 def get_today_cash_collection():
-    """Today's CASH collection (logged-in user only)"""
-
+    """
+    Today's CASH collection (logged-in user only).
+    Uses Mode of Payment type = 'Cash' (not name). Applies to both
+    Payment Entry and included payments on Sales Invoices.
+    """
     try:
         today = frappe.utils.today()
         current_user = frappe.session.user
 
-        data = frappe.db.sql("""
+        # Payment Entry where Mode of Payment type = Cash
+        pe_data = frappe.db.sql("""
             SELECT
-                COUNT(name) AS payment_count,
-                SUM(paid_amount) AS cash_collection
-            FROM `tabPayment Entry`
-            WHERE
-                posting_date = %s
-                AND docstatus = 1
-                AND payment_type = 'Receive'
-                AND mode_of_payment = 'Cash'
-                AND owner = %s
+                COUNT(pe.name) AS payment_count,
+                COALESCE(SUM(pe.paid_amount), 0) AS cash_collection
+            FROM `tabPayment Entry` pe
+            INNER JOIN `tabMode of Payment` mop ON mop.name = pe.mode_of_payment AND mop.type = 'Cash'
+            WHERE pe.posting_date = %s
+                AND pe.docstatus = 1
+                AND pe.payment_type = 'Receive'
+                AND pe.owner = %s
         """, (today, current_user), as_dict=True)[0]
+
+        # Sales Invoice included payments where Mode of Payment type = Cash
+        si_data = frappe.db.sql("""
+            SELECT
+                COUNT(sip.name) AS payment_count,
+                COALESCE(SUM(sip.amount), 0) AS cash_collection
+            FROM `tabSales Invoice Payment` sip
+            INNER JOIN `tabSales Invoice` si ON si.name = sip.parent
+            INNER JOIN `tabMode of Payment` mop ON mop.name = sip.mode_of_payment AND mop.type = 'Cash'
+            WHERE si.posting_date = %s
+                AND si.docstatus = 1
+                AND si.owner = %s
+        """, (today, current_user), as_dict=True)[0]
+
+        total_amount = flt(pe_data.cash_collection or 0) + flt(si_data.cash_collection or 0)
+        total_count = cint(pe_data.payment_count or 0) + cint(si_data.payment_count or 0)
 
         return {
             "status": "success",
             "date": today,
-            "amount": data.cash_collection or 0,
-            "payments": data.payment_count or 0
+            "amount": total_amount,
+            "total": total_amount,
+            "payments": total_count,
+            "payment_count": total_count
         }
 
     except Exception as e:
@@ -4665,34 +4711,51 @@ def get_today_cash_collection():
 
 @frappe.whitelist(allow_guest=False, methods=["GET"])
 def get_today_bank_collection():
-    """Today's BANK collection (logged-in user only)"""
-
+    """
+    Today's BANK collection (logged-in user only).
+    Uses Mode of Payment type = 'Bank' (not name). Applies to both
+    Payment Entry and included payments on Sales Invoices.
+    """
     try:
         today = frappe.utils.today()
         current_user = frappe.session.user
 
-        data = frappe.db.sql("""
+        # Payment Entry where Mode of Payment type = Bank
+        pe_data = frappe.db.sql("""
             SELECT
-                COUNT(name) AS payment_count,
-                SUM(paid_amount) AS bank_collection
-            FROM `tabPayment Entry`
-            WHERE
-                posting_date = %s
-                AND docstatus = 1
-                AND payment_type = 'Receive'
-                AND mode_of_payment IN (
-                    'Bank Transfer (Alrajhi)',
-                    'Bank Transfer (NCB)',
-                    'Bank Transfer (Alinma)'
-                )
-                AND owner = %s
+                COUNT(pe.name) AS payment_count,
+                COALESCE(SUM(pe.paid_amount), 0) AS bank_collection
+            FROM `tabPayment Entry` pe
+            INNER JOIN `tabMode of Payment` mop ON mop.name = pe.mode_of_payment AND mop.type = 'Bank'
+            WHERE pe.posting_date = %s
+                AND pe.docstatus = 1
+                AND pe.payment_type = 'Receive'
+                AND pe.owner = %s
         """, (today, current_user), as_dict=True)[0]
+
+        # Sales Invoice included payments where Mode of Payment type = Bank
+        si_data = frappe.db.sql("""
+            SELECT
+                COUNT(sip.name) AS payment_count,
+                COALESCE(SUM(sip.amount), 0) AS bank_collection
+            FROM `tabSales Invoice Payment` sip
+            INNER JOIN `tabSales Invoice` si ON si.name = sip.parent
+            INNER JOIN `tabMode of Payment` mop ON mop.name = sip.mode_of_payment AND mop.type = 'Bank'
+            WHERE si.posting_date = %s
+                AND si.docstatus = 1
+                AND si.owner = %s
+        """, (today, current_user), as_dict=True)[0]
+
+        total_amount = flt(pe_data.bank_collection or 0) + flt(si_data.bank_collection or 0)
+        total_count = cint(pe_data.payment_count or 0) + cint(si_data.payment_count or 0)
 
         return {
             "status": "success",
             "date": today,
-            "amount": data.bank_collection or 0,
-            "payments": data.payment_count or 0
+            "amount": total_amount,
+            "total": total_amount,
+            "payments": total_count,
+            "payment_count": total_count
         }
 
     except Exception as e:
