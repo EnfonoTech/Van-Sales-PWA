@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Search, Loader2, Check } from 'lucide-react';
+import ErrorDialog from './ErrorDialog';
 import {
   getSalesOrderList,
   getSalesOrderDetails,
@@ -43,6 +44,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [discountAmount, setDiscountAmount] = useState('0');
   const itemDropdownRef = useRef(null);
+  const [errorDialog, setErrorDialog] = useState({ isOpen: false, title: '', message: '' });
 
   const [deliveryDate, setDeliveryDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -308,11 +310,19 @@ function SalesOrderModule({ customers = [], items = [] }) {
   const handleEditSalesOrder = async () => {
     const doc = orderDetail || selectedOrder;
     if (!doc?.name) {
-      alert('No sales order selected');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error',
+        message: 'No sales order selected'
+      });
       return;
     }
     if (doc.docstatus !== 0) {
-      alert('Only Draft sales orders can be edited');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error',
+        message: 'Only Draft sales orders can be edited'
+      });
       return;
     }
     setLoadingDetail(true);
@@ -353,7 +363,11 @@ function SalesOrderModule({ customers = [], items = [] }) {
       setView('create');
     } catch (error) {
       console.error('Error loading sales order for editing:', error);
-      alert(`Error loading sales order for editing: ${error.message || 'Unknown error'}`);
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error Loading Sales Order',
+        message: error.message || 'Unknown error'
+      });
     } finally {
       setLoadingDetail(false);
     }
@@ -370,7 +384,23 @@ function SalesOrderModule({ customers = [], items = [] }) {
       setOrderDetail(updated);
       setSelectedOrder(updated);
     } catch (err) {
-      alert(err.message || 'Failed to submit sales order');
+      console.error('Error submitting sales order:', err);
+      // Extract and clean error message
+      let errorMsg = 'Failed to submit sales order';
+      if (err.message) {
+        errorMsg = err.message.replace(/<[^>]*>/g, '').trim();
+      } else if (err.response?.data?.message) {
+        errorMsg = typeof err.response.data.message === 'string' 
+          ? err.response.data.message.replace(/<[^>]*>/g, '').trim()
+          : err.response.data.message?.message?.replace(/<[^>]*>/g, '').trim() || errorMsg;
+      } else if (err.response?.data?.exc) {
+        errorMsg = String(err.response.data.exc).replace(/<[^>]*>/g, '').trim();
+      }
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error Submitting Sales Order',
+        message: errorMsg
+      });
     } finally {
       setSubmittingSalesOrder(false);
     }
@@ -380,7 +410,11 @@ function SalesOrderModule({ customers = [], items = [] }) {
     const doc = orderDetail || selectedOrder;
     if (!doc?.name) return;
     if (doc.docstatus !== 1) {
-      alert('Only submitted sales orders can be converted to Sales Invoice');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error',
+        message: 'Only submitted sales orders can be converted to Sales Invoice'
+      });
       return;
     }
     if (!confirm('Create a Sales Invoice from this Sales Order?')) return;
@@ -392,10 +426,30 @@ function SalesOrderModule({ customers = [], items = [] }) {
         // Navigate to Sales Invoice detail view
         navigate(`/sales?name=${salesInvoiceName}`);
       } else {
-        alert('Sales Invoice created but name not returned');
+        setErrorDialog({
+          isOpen: true,
+          title: 'Warning',
+          message: 'Sales Invoice created but name not returned'
+        });
       }
     } catch (err) {
-      alert(err.message || 'Failed to convert sales order to sales invoice');
+      console.error('Error converting sales order to sales invoice:', err);
+      // Extract and clean error message
+      let errorMsg = 'Failed to convert sales order to sales invoice';
+      if (err.message) {
+        errorMsg = err.message.replace(/<[^>]*>/g, '').trim();
+      } else if (err.response?.data?.message) {
+        errorMsg = typeof err.response.data.message === 'string' 
+          ? err.response.data.message.replace(/<[^>]*>/g, '').trim()
+          : err.response.data.message?.message?.replace(/<[^>]*>/g, '').trim() || errorMsg;
+      } else if (err.response?.data?.exc) {
+        errorMsg = String(err.response.data.exc).replace(/<[^>]*>/g, '').trim();
+      }
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error Submitting Sales Order',
+        message: errorMsg
+      });
     } finally {
       setConvertingToSalesInvoice(false);
     }
@@ -405,12 +459,28 @@ function SalesOrderModule({ customers = [], items = [] }) {
     e.preventDefault();
     const customer = customers.find((c) => c.id === selectedCustomer);
     if (!customer || lineItems.length === 0) {
-      alert('Please select a customer and add items');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Validation Error',
+        message: 'Please select a customer and add items'
+      });
       return;
     }
-    const invalidPrice = lineItems.filter((i) => getPriceValue(i.price) <= 0 || !i.price?.trim());
+    const invalidPrice = lineItems.filter((i) => {
+      const priceStr = i.price;
+      if (!priceStr || (typeof priceStr === 'string' && priceStr.trim() === '')) {
+        return true;
+      }
+      const price = getPriceValue(priceStr);
+      return price <= 0 || isNaN(price);
+    });
     if (invalidPrice.length) {
-      alert(`Please enter a valid price for: ${invalidPrice.map((i) => i.name || i.code).join(', ')}`);
+      const itemNames = invalidPrice.map((i) => i.name || i.code || 'Unknown Item').join(', ');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Validation Error',
+        message: `Please enter a valid price for: ${itemNames}`
+      });
       return;
     }
     setSubmitting(true);
@@ -464,7 +534,60 @@ function SalesOrderModule({ customers = [], items = [] }) {
       setDeliveryDate(new Date().toISOString().split('T')[0]);
       setEditingSalesOrder(null);
     } catch (err) {
-      alert(err.message || 'Failed to create sales order');
+      console.error('Error creating/updating sales order:', err);
+      // Extract and clean error message
+      const cleanErrorMessage = (error) => {
+        const stripHtml = (s) => (typeof s === 'string' ? s.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() : '');
+        const stripStatusPrefix = (s) => {
+          if (typeof s !== 'string') return '';
+          const statusCodePattern = /^(API Error:\s*\d+\s+[A-Za-z\s]+:\s*|^\d+\s+[A-Za-z\s]+:\s*)/i;
+          return s.replace(statusCodePattern, '').trim();
+        };
+        
+        if (typeof error === 'string') {
+          return stripStatusPrefix(stripHtml(error)) || 'An error occurred. Please try again.';
+        }
+        
+        if (error && typeof error === 'object') {
+          // Check various error message locations
+          if (error.response?.data?.message?.status === 'error' && error.response.data.message.message) {
+            return stripHtml(String(error.response.data.message.message));
+          }
+          if (error.response?.data?.message?.message && typeof error.response.data.message.message === 'string') {
+            return stripHtml(error.response.data.message.message);
+          }
+          if (error.response?.data?.message && typeof error.response.data.message === 'string') {
+            return stripStatusPrefix(stripHtml(error.response.data.message));
+          }
+          if (error.response?.data?.exc) {
+            return stripHtml(String(error.response.data.exc));
+          }
+          if (error.message) {
+            return stripStatusPrefix(stripHtml(error.message));
+          }
+          // Try parsing _server_messages
+          const serverMessagesStr = error.response?._server_messages || error.response?.data?._server_messages;
+          if (serverMessagesStr) {
+            try {
+              const serverMessages = JSON.parse(serverMessagesStr);
+              if (Array.isArray(serverMessages) && serverMessages.length > 0) {
+                const msg = typeof serverMessages[0] === 'string' ? JSON.parse(serverMessages[0]) : serverMessages[0];
+                if (msg?.message || msg?.title) {
+                  return stripHtml(String(msg.message || msg.title));
+                }
+              }
+            } catch {}
+          }
+        }
+        return 'Failed to create/update sales order. Please try again.';
+      };
+      
+      const errorMsg = cleanErrorMessage(err);
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error Submitting Sales Order',
+        message: errorMsg
+      });
     } finally {
       setSubmitting(false);
     }
@@ -800,6 +923,14 @@ function SalesOrderModule({ customers = [], items = [] }) {
           </div>
         </div>
       )}
+      
+      {/* Error Dialog */}
+      <ErrorDialog
+        isOpen={errorDialog.isOpen}
+        onClose={() => setErrorDialog({ isOpen: false, title: '', message: '' })}
+        title={errorDialog.title}
+        message={errorDialog.message}
+      />
     </div>
   );
 }

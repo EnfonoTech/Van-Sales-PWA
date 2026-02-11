@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Search, Loader2, Check } from 'lucide-react';
+import ErrorDialog from './ErrorDialog';
 import {
   getQuotationList,
   getQuotationDetails,
@@ -66,6 +67,7 @@ function QuotationModule({ customers = [], items = [] }) {
     source: 'Campaign',
   });
   const [submittingQuickLead, setSubmittingQuickLead] = useState(false);
+  const [errorDialog, setErrorDialog] = useState({ isOpen: false, title: '', message: '' });
 
   const getPriceValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) >= 0 ? parseFloat(v) : 0);
   const getQuantityValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) > 0 ? parseFloat(v) : 1);
@@ -360,7 +362,23 @@ function QuotationModule({ customers = [], items = [] }) {
       setQuotationDetail(updated);
       setSelectedQuotation(updated);
     } catch (err) {
-      alert(err.message || 'Failed to submit quotation');
+      console.error('Error submitting quotation:', err);
+      // Extract and clean error message
+      let errorMsg = 'Failed to submit quotation';
+      if (err.message) {
+        errorMsg = err.message.replace(/<[^>]*>/g, '').trim();
+      } else if (err.response?.data?.message) {
+        errorMsg = typeof err.response.data.message === 'string' 
+          ? err.response.data.message.replace(/<[^>]*>/g, '').trim()
+          : err.response.data.message?.message?.replace(/<[^>]*>/g, '').trim() || errorMsg;
+      } else if (err.response?.data?.exc) {
+        errorMsg = String(err.response.data.exc).replace(/<[^>]*>/g, '').trim();
+      }
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error Submitting Quotation',
+        message: errorMsg
+      });
     } finally {
       setSubmittingQuotation(false);
     }
@@ -369,11 +387,19 @@ function QuotationModule({ customers = [], items = [] }) {
   const handleEditQuotation = async () => {
     const doc = quotationDetail || selectedQuotation;
     if (!doc?.name) {
-      alert('No quotation selected');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error',
+        message: 'No quotation selected'
+      });
       return;
     }
     if (doc.docstatus !== 0) {
-      alert('Only Draft quotations can be edited');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error',
+        message: 'Only Draft quotations can be edited'
+      });
       return;
     }
     setLoadingDetail(true);
@@ -419,7 +445,11 @@ function QuotationModule({ customers = [], items = [] }) {
       setView('create');
     } catch (error) {
       console.error('Error loading quotation for editing:', error);
-      alert(`Error loading quotation for editing: ${error.message || 'Unknown error'}`);
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error Loading Quotation',
+        message: error.message || 'Unknown error'
+      });
     } finally {
       setLoadingDetail(false);
     }
@@ -429,7 +459,11 @@ function QuotationModule({ customers = [], items = [] }) {
     const doc = quotationDetail || selectedQuotation;
     if (!doc?.name) return;
     if (doc.docstatus !== 1) {
-      alert('Only submitted quotations can be converted to Sales Order');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error',
+        message: 'Only submitted quotations can be converted to Sales Order'
+      });
       return;
     }
     if (!confirm('Create a Sales Order from this Quotation?')) return;
@@ -441,10 +475,30 @@ function QuotationModule({ customers = [], items = [] }) {
         // Navigate to Sales Order detail view
         navigate(`/sales-orders?name=${salesOrderName}`);
       } else {
-        alert('Sales Order created but name not returned');
+        setErrorDialog({
+          isOpen: true,
+          title: 'Warning',
+          message: 'Sales Order created but name not returned'
+        });
       }
     } catch (err) {
-      alert(err.message || 'Failed to convert quotation to sales order');
+      console.error('Error converting quotation to sales order:', err);
+      // Extract and clean error message
+      let errorMsg = 'Failed to convert quotation to sales order';
+      if (err.message) {
+        errorMsg = err.message.replace(/<[^>]*>/g, '').trim();
+      } else if (err.response?.data?.message) {
+        errorMsg = typeof err.response.data.message === 'string' 
+          ? err.response.data.message.replace(/<[^>]*>/g, '').trim()
+          : err.response.data.message?.message?.replace(/<[^>]*>/g, '').trim() || errorMsg;
+      } else if (err.response?.data?.exc) {
+        errorMsg = String(err.response.data.exc).replace(/<[^>]*>/g, '').trim();
+      }
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error Submitting Quotation',
+        message: errorMsg
+      });
     } finally {
       setConvertingToSalesOrder(false);
     }
@@ -456,7 +510,11 @@ function QuotationModule({ customers = [], items = [] }) {
       e.stopPropagation();
     }
     if (!quickLeadFormData.first_name && !quickLeadFormData.company_name) {
-      alert('Please fill in First Name or Company Name');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Validation Error',
+        message: 'Please fill in First Name or Company Name'
+      });
       return;
     }
     setSubmittingQuickLead(true);
@@ -478,7 +536,11 @@ function QuotationModule({ customers = [], items = [] }) {
       setQuickLeadFormData({ first_name: '', company_name: '', email_id: '', mobile_no: '', source: 'Campaign' });
       alert(`Lead "${leadName}" created and selected successfully!`);
     } catch (err) {
-      alert(err.message || 'Failed to create lead');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error Creating Lead',
+        message: err.message || 'Failed to create lead'
+      });
     } finally {
       setSubmittingQuickLead(false);
     }
@@ -487,16 +549,36 @@ function QuotationModule({ customers = [], items = [] }) {
   const handleSubmitCreate = async (e) => {
     e.preventDefault();
     if (!partyNameForApi.trim()) {
-      alert('Please select a Customer or Lead');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Validation Error',
+        message: 'Please select a Customer or Lead'
+      });
       return;
     }
     if (lineItems.length === 0) {
-      alert('Please add at least one item');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Validation Error',
+        message: 'Please add at least one item'
+      });
       return;
     }
-    const invalidPrice = lineItems.filter((i) => getPriceValue(i.price) <= 0 || !i.price?.trim());
+    const invalidPrice = lineItems.filter((i) => {
+      const priceStr = i.price;
+      if (!priceStr || (typeof priceStr === 'string' && priceStr.trim() === '')) {
+        return true;
+      }
+      const price = getPriceValue(priceStr);
+      return price <= 0 || isNaN(price);
+    });
     if (invalidPrice.length) {
-      alert(`Please enter a valid price for: ${invalidPrice.map((i) => i.name || i.code).join(', ')}`);
+      const itemNames = invalidPrice.map((i) => i.name || i.code || 'Unknown Item').join(', ');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Validation Error',
+        message: `Please enter a valid price for: ${itemNames}`
+      });
       return;
     }
     setSubmitting(true);
@@ -551,7 +633,60 @@ function QuotationModule({ customers = [], items = [] }) {
       setDiscountAmount('0');
       setEditingQuotation(null);
     } catch (err) {
-      alert(err.message || 'Failed to create quotation');
+      console.error('Error creating/updating quotation:', err);
+      // Extract and clean error message
+      const cleanErrorMessage = (error) => {
+        const stripHtml = (s) => (typeof s === 'string' ? s.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() : '');
+        const stripStatusPrefix = (s) => {
+          if (typeof s !== 'string') return '';
+          const statusCodePattern = /^(API Error:\s*\d+\s+[A-Za-z\s]+:\s*|^\d+\s+[A-Za-z\s]+:\s*)/i;
+          return s.replace(statusCodePattern, '').trim();
+        };
+        
+        if (typeof error === 'string') {
+          return stripStatusPrefix(stripHtml(error)) || 'An error occurred. Please try again.';
+        }
+        
+        if (error && typeof error === 'object') {
+          // Check various error message locations
+          if (error.response?.data?.message?.status === 'error' && error.response.data.message.message) {
+            return stripHtml(String(error.response.data.message.message));
+          }
+          if (error.response?.data?.message?.message && typeof error.response.data.message.message === 'string') {
+            return stripHtml(error.response.data.message.message);
+          }
+          if (error.response?.data?.message && typeof error.response.data.message === 'string') {
+            return stripStatusPrefix(stripHtml(error.response.data.message));
+          }
+          if (error.response?.data?.exc) {
+            return stripHtml(String(error.response.data.exc));
+          }
+          if (error.message) {
+            return stripStatusPrefix(stripHtml(error.message));
+          }
+          // Try parsing _server_messages
+          const serverMessagesStr = error.response?._server_messages || error.response?.data?._server_messages;
+          if (serverMessagesStr) {
+            try {
+              const serverMessages = JSON.parse(serverMessagesStr);
+              if (Array.isArray(serverMessages) && serverMessages.length > 0) {
+                const msg = typeof serverMessages[0] === 'string' ? JSON.parse(serverMessages[0]) : serverMessages[0];
+                if (msg?.message || msg?.title) {
+                  return stripHtml(String(msg.message || msg.title));
+                }
+              }
+            } catch {}
+          }
+        }
+        return 'Failed to create/update quotation. Please try again.';
+      };
+      
+      const errorMsg = cleanErrorMessage(err);
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error Submitting Quotation',
+        message: errorMsg
+      });
     } finally {
       setSubmitting(false);
     }
@@ -1037,6 +1172,14 @@ function QuotationModule({ customers = [], items = [] }) {
           </div>
         </div>
       )}
+      
+      {/* Error Dialog */}
+      <ErrorDialog
+        isOpen={errorDialog.isOpen}
+        onClose={() => setErrorDialog({ isOpen: false, title: '', message: '' })}
+        title={errorDialog.title}
+        message={errorDialog.message}
+      />
     </div>
   );
 }

@@ -4,6 +4,9 @@ import { useLocation } from 'react-router-dom';
 import { Plus, Search, Trash2, Save, Loader2, Check } from 'lucide-react';
 import { getItemPrice, searchItems, createSalesInvoice, updateSalesInvoice, getInvoiceDetails, getItemDetails, submitSalesInvoice, createCustomer, getSalesInvoiceList, getPaymentMethods } from '../services/api';
 import SARSymbol from './SARSymbol';
+import ErrorDialog from './ErrorDialog';
+import ConfirmationDialog from './ConfirmationDialog';
+import SuccessDialog from './SuccessDialog';
 
 function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadingCustomers, loadingItems, loadingSales }) {
   const location = useLocation();
@@ -39,6 +42,9 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
   const itemDropdownRef = useRef(null);
+  const [errorDialog, setErrorDialog] = useState({ isOpen: false, title: '', message: '' });
+  const [confirmationDialog, setConfirmationDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null, onCancel: null });
+  const [successDialog, setSuccessDialog] = useState({ isOpen: false, title: '', message: '' });
   const sanitizeDecimalInput = (value = '') => value.replace(/[^0-9.]/g, '');
   const sanitizeIntegerInput = (value = '') => value.replace(/[^0-9]/g, '');
   const cleanErrorMessage = (error) => {
@@ -59,17 +65,20 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
     if (error && typeof error === 'object') {
       // Priority 1: error.response.data.message.message (nested)
       if (error.response?.data?.message?.status === 'error' && error.response.data.message.message) {
-        return stripHtml(String(error.response.data.message.message));
+        const msg = stripHtml(String(error.response.data.message.message));
+        if (msg && msg.length >= 3) return msg;
       }
       // Priority 2: error.response.data.message.message (alternative)
       if (error.response?.data?.message?.message && typeof error.response.data.message.message === 'string') {
-        return stripHtml(error.response.data.message.message);
+        const msg = stripHtml(error.response.data.message.message);
+        if (msg && msg.length >= 3) return msg;
       }
       // Priority 3: error.response.message.message (alternative structure)
       if (error.response?.message?.status === 'error' && error.response.message.message) {
-        return stripHtml(String(error.response.message.message));
+        const msg = stripHtml(String(error.response.message.message));
+        if (msg && msg.length >= 3) return msg;
       }
-      // Priority 4: error.message
+      // Priority 4: error.message (most common for thrown errors)
       if (typeof error.message === 'string' && error.message.trim()) {
         const cleaned = stripStatusPrefix(stripHtml(error.message));
         if (cleaned && cleaned.length >= 3) return cleaned;
@@ -85,7 +94,12 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
           if (cleaned && cleaned.length >= 3) return cleaned;
         }
       }
-      // Priority 6: parse _server_messages
+      // Priority 6: error.response.data.exc (exception message)
+      if (error.response?.data?.exc && typeof error.response.data.exc === 'string') {
+        const cleaned = stripStatusPrefix(stripHtml(error.response.data.exc));
+        if (cleaned && cleaned.length >= 3) return cleaned;
+      }
+      // Priority 7: parse _server_messages
       const serverMessagesStr = error.response?._server_messages || error.response?.data?._server_messages;
       if (serverMessagesStr) {
         try {
@@ -534,12 +548,20 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
     // Validate VAT number if provided
     if (quickCustomerFormData.custom_vat_registration_number && quickCustomerFormData.custom_vat_registration_number.length !== 15) {
       setQuickCustomerVatError('VAT number must be exactly 15 digits');
-      alert('VAT number must be exactly 15 digits');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Validation Error',
+        message: 'VAT number must be exactly 15 digits'
+      });
       return;
     }
     
     if (!quickCustomerFormData.customer_name_arabic) {
-      alert('Please fill in Customer Name');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Validation Error',
+        message: 'Please fill in Customer Name'
+      });
       return;
     }
     
@@ -552,7 +574,11 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
       
       // Make sure we're actually calling the API
       if (!customerData.customer_name) {
-        alert('Please fill in Customer Name');
+        setErrorDialog({
+          isOpen: true,
+          title: 'Validation Error',
+          message: 'Please fill in Customer Name'
+        });
         setSubmittingQuickCustomer(false);
         return;
       }
@@ -604,11 +630,20 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
       setCustomerSearch(customerName);
       setShowCustomerResults(false);
       
-      alert(`Customer "${customerName}" created and selected successfully!`);
+      // Show success dialog
+      setSuccessDialog({
+        isOpen: true,
+        title: 'Success',
+        message: `Customer "${customerName}" created and selected successfully!`
+      });
     } catch (error) {
       console.error('Error creating customer:', error);
-      const errorMessage = error.message || 'Unknown error occurred';
-      alert(`Error creating customer: ${errorMessage}`);
+      const errorMessage = cleanErrorMessage(error);
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error Creating Customer',
+        message: errorMessage
+      });
     } finally {
       setSubmittingQuickCustomer(false);
     }
@@ -640,13 +675,21 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
   const handleEditInvoice = async () => {
     const invoice = invoiceDetails || selectedInvoice;
     if (!invoice) {
-      alert('No invoice selected');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error',
+        message: 'No invoice selected'
+      });
       return;
     }
 
     const invoiceName = invoice.id || invoice.invoice_name || invoice.name;
     if (!invoiceName) {
-      alert('Invoice name not found. Cannot edit invoice.');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error',
+        message: 'Invoice name not found. Cannot edit invoice.'
+      });
       return;
     }
 
@@ -694,7 +737,11 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
       setView('create');
     } catch (error) {
       console.error('Error loading invoice for editing:', error);
-      alert(`Error loading invoice for editing: ${cleanErrorMessage(error)}`);
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error Loading Invoice',
+        message: cleanErrorMessage(error)
+      });
     } finally {
       setLoadingDetails(false);
     }
@@ -713,7 +760,11 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         console.warn('No invoice name found in sale object:', sale);
         // Fallback to local sale data if no invoice name
         setInvoiceDetails(sale);
-        alert('Invoice name not found. Showing available information.');
+        setErrorDialog({
+          isOpen: true,
+          title: 'Warning',
+          message: 'Invoice name not found. Showing available information.'
+        });
         return;
       }
       
@@ -724,7 +775,11 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
       console.error('Error fetching invoice details:', error);
       // Fallback to local sale data if API fails
       setInvoiceDetails(sale);
-      alert('Could not fetch full invoice details. Showing available information.');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Warning',
+        message: 'Could not fetch full invoice details. Showing available information.'
+      });
     } finally {
       setLoadingDetails(false);
     }
@@ -733,49 +788,81 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
   const handleSubmitInvoice = async () => {
     const invoice = invoiceDetails || selectedInvoice;
     if (!invoice) {
-      alert('No invoice selected');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error',
+        message: 'No invoice selected'
+      });
       return;
     }
 
     // Get invoice name from invoice object
     const invoiceName = invoice.id || invoice.invoice_name || invoice.name;
     if (!invoiceName) {
-      alert('Invoice name not found. Cannot submit invoice.');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error',
+        message: 'Invoice name not found. Cannot submit invoice.'
+      });
       return;
     }
 
     // Check if already submitted
     if (invoice.status === 'Submitted' || invoice.status === 'submitted') {
-      alert('This invoice is already submitted.');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error',
+        message: 'This invoice is already submitted.'
+      });
       return;
     }
 
-    if (!confirm('Are you sure you want to submit this invoice? This action cannot be undone.')) {
-      return;
-    }
-
-    setSubmittingInvoice(true);
-    try {
-      await submitSalesInvoice(invoiceName);
-      
-      // Refresh invoice details after submission
-      const updatedDetails = await getInvoiceDetails(invoiceName);
-      setInvoiceDetails(updatedDetails);
-      
-      // Update the status in the local invoice object
-      if (selectedInvoice) {
-        setSelectedInvoice({ ...selectedInvoice, status: 'Submitted' });
+    // Show confirmation dialog
+    setConfirmationDialog({
+      isOpen: true,
+      title: 'Confirm Submission',
+      message: 'Are you sure you want to submit this invoice? This action cannot be undone.',
+      onConfirm: async () => {
+        setConfirmationDialog({ isOpen: false, title: '', message: '', onConfirm: null, onCancel: null });
+        setSubmittingInvoice(true);
+        try {
+          await submitSalesInvoice(invoiceName);
+          
+          // Refresh invoice details after submission
+          const updatedDetails = await getInvoiceDetails(invoiceName);
+          setInvoiceDetails(updatedDetails);
+          
+          // Update the status in the local invoice object
+          if (selectedInvoice) {
+            setSelectedInvoice({ ...selectedInvoice, status: 'Submitted' });
+          }
+          
+          // Show success dialog
+          setSuccessDialog({
+            isOpen: true,
+            title: 'Success',
+            message: 'Invoice submitted successfully!'
+          });
+          
+          // Note: Sales list will be refreshed when user navigates back to it
+        } catch (error) {
+          console.error('Error submitting invoice:', error);
+          const errorMsg = cleanErrorMessage(error);
+          
+          // Show error dialog
+          setErrorDialog({
+            isOpen: true,
+            title: 'Error Submitting Invoice',
+            message: errorMsg
+          });
+        } finally {
+          setSubmittingInvoice(false);
+        }
+      },
+      onCancel: () => {
+        setConfirmationDialog({ isOpen: false, title: '', message: '', onConfirm: null, onCancel: null });
       }
-      
-      alert('Invoice submitted successfully!');
-      
-      // Note: Sales list will be refreshed when user navigates back to it
-    } catch (error) {
-      console.error('Error submitting invoice:', error);
-      alert(`Error submitting invoice: ${cleanErrorMessage(error)}`);
-    } finally {
-      setSubmittingInvoice(false);
-    }
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -783,19 +870,49 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
     const customer = customers.find(c => c.id === selectedCustomer);
     
     if (!customer || invoiceItems.length === 0) {
-      alert('Please select a customer and add items');
+      setErrorDialog({
+        isOpen: true,
+        title: 'Validation Error',
+        message: 'Please select a customer and add items'
+      });
       return;
     }
 
     // Validate that all items have a valid price
     const itemsWithInvalidPrice = invoiceItems.filter(item => {
-      const price = getPriceValue(item.price);
-      return price <= 0 || !item.price || item.price.trim() === '';
+      const priceStr = item.price;
+      
+      // Check if price is missing, null, undefined, or empty string
+      if (priceStr === null || priceStr === undefined || priceStr === '') {
+        return true;
+      }
+      
+      // Check if it's a string that's empty after trimming
+      if (typeof priceStr === 'string' && priceStr.trim() === '') {
+        return true;
+      }
+      
+      // Try to parse the price
+      const priceNum = parseFloat(priceStr);
+      
+      // Check if parsing failed or resulted in NaN, Infinity, or non-positive number
+      if (isNaN(priceNum) || !isFinite(priceNum) || priceNum <= 0) {
+        return true;
+      }
+      
+      return false;
     });
 
     if (itemsWithInvalidPrice.length > 0) {
-      const itemNames = itemsWithInvalidPrice.map(item => item.name || item.code).join(', ');
-      alert(`Please enter a valid price for all items. Missing or invalid price for: ${itemNames}`);
+      const itemNames = itemsWithInvalidPrice.map(item => item.name || item.code || 'Unknown Item').join(', ');
+      const errorMessage = `Please enter a valid price for all items. Missing or invalid price for: ${itemNames}`;
+      
+      // Show error dialog
+      setErrorDialog({
+        isOpen: true,
+        title: 'Validation Error',
+        message: errorMessage
+      });
       return;
     }
 
@@ -920,8 +1037,9 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         setView('detail');
     } catch (error) {
       console.error('Error creating sale:', error);
+      // Don't change view on error - stay on create view to show error
       if (error.message === 'OFFLINE') {
-        // Queue for background sync
+        // Queue for background sync - keep alert for offline message
         const queuedSale = {
           customerId: customer.id,
           customerName: customer.name,
@@ -938,22 +1056,65 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         onAddSale(queuedSale);
         setSelectedInvoice(queuedSale);
         setInvoiceDetails(queuedSale);
-        alert('Sale saved offline. It will be synced when connection is restored.');
+        setSuccessDialog({
+          isOpen: true,
+          title: 'Saved Offline',
+          message: 'Sale saved offline. It will be synced when connection is restored.'
+        });
         setSelectedCustomer('');
         setInvoiceItems([]);
         setDiscountAmount('0');
         setView('detail');
       } else {
-        console.error('Error creating sale:', error);
-        alert(`Error creating sale: ${cleanErrorMessage(error)}`);
+        // Show error in alert dialog - DON'T change view, stay on create view
+        const errorMsg = cleanErrorMessage(error);
+        setErrorDialog({
+          isOpen: true,
+          title: 'Error Creating Invoice',
+          message: errorMsg
+        });
+        // Don't navigate away - keep user on create view to see error
       }
     } finally {
       setSubmitting(false);
     }
   };
 
+  // Error Dialog - render at top level so it's always visible
+  const errorDialogElement = (
+    <ErrorDialog
+      isOpen={errorDialog.isOpen}
+      onClose={() => setErrorDialog({ isOpen: false, title: '', message: '' })}
+      title={errorDialog.title}
+      message={errorDialog.message}
+    />
+  );
+
+  // Confirmation Dialog - render at top level so it's always visible
+  const confirmationDialogElement = (
+    <ConfirmationDialog
+      isOpen={confirmationDialog.isOpen}
+      onClose={() => setConfirmationDialog({ isOpen: false, title: '', message: '', onConfirm: null, onCancel: null })}
+      onConfirm={confirmationDialog.onConfirm}
+      onCancel={confirmationDialog.onCancel}
+      title={confirmationDialog.title}
+      message={confirmationDialog.message}
+    />
+  );
+
+  // Success Dialog - render at top level so it's always visible
+  const successDialogElement = (
+    <SuccessDialog
+      isOpen={successDialog.isOpen}
+      onClose={() => setSuccessDialog({ isOpen: false, title: '', message: '' })}
+      title={successDialog.title}
+      message={successDialog.message}
+    />
+  );
+
   if (view === 'create') {
     return (
+      <>
       <div className="sales-create fade-in">
         <div className="flex-between mb-6">
           <h1>New Sale</h1>
@@ -1488,6 +1649,10 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
           )}
         </form>
       </div>
+      {errorDialogElement}
+      {confirmationDialogElement}
+      {successDialogElement}
+      </>
     );
   }
 
@@ -1496,6 +1661,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
     const invoice = invoiceDetails || selectedInvoice;
     
     return (
+      <>
       <div className="sales-detail fade-in">
         <div className="flex-between mb-6">
           <div>
@@ -1693,10 +1859,15 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
           </div>
         )}
       </div>
+      {errorDialogElement}
+      {confirmationDialogElement}
+      {successDialogElement}
+      </>
     );
   }
 
   return (
+    <>
     <div className="sales-list fade-in">
       <div className="flex-between mb-6">
         <h1>Sales Invoices</h1>
@@ -1826,6 +1997,10 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         </div>
       )}
     </div>
+    {errorDialogElement}
+    {confirmationDialogElement}
+    {successDialogElement}
+    </>
   );
 }
 
