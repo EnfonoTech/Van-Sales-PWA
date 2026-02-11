@@ -1,8 +1,8 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DollarSign, TrendingUp, Wallet, CreditCard, Loader2, Smartphone } from 'lucide-react';
-import { getTodaySales, getTodayCollection, getTodayCashCollection, getTodayBankCollection, getDailyPosCollection } from '../services/api';
+import { DollarSign, TrendingUp, Wallet, CreditCard, Loader2 } from 'lucide-react';
+import { getTodaySales, getTodayCollection, getTodayCashCollection, getTodayBankCollection } from '../services/api';
 import SARSymbol from './SARSymbol';
 
 function Dashboard({ sales, payments, customers, loadingSales, loadingPayments, loadingCustomers }) {
@@ -12,19 +12,17 @@ function Dashboard({ sales, payments, customers, loadingSales, loadingPayments, 
   const [todayCollectionData, setTodayCollectionData] = useState({ total: 0, count: 0 });
   const [todayCashData, setTodayCashData] = useState({ total: 0, count: 0 });
   const [todayBankData, setTodayBankData] = useState({ total: 0, count: 0 });
-  const [shabakaCollectionData, setShabakaCollectionData] = useState({ total: 0, count: 0 });
 
   useEffect(() => {
     const fetchDashboardStats = async () => {
       try {
         setLoadingStats(true);
         
-        const [salesRes, collectionRes, cashRes, bankRes, shabakaRes] = await Promise.all([
+        const [salesRes, collectionRes, cashRes, bankRes] = await Promise.all([
           getTodaySales().catch(() => ({ total: 0, count: 0 })),
           getTodayCollection().catch(() => ({ total: 0, count: 0 })),
           getTodayCashCollection().catch(() => ({ total: 0, count: 0 })),
-          getTodayBankCollection().catch(() => ({ total: 0, count: 0 })),
-          getDailyPosCollection().catch(() => ({ total: 0, count: 0 }))
+          getTodayBankCollection().catch(() => ({ total: 0, count: 0 }))
         ]);
 
         // Handle different response structures
@@ -47,11 +45,6 @@ function Dashboard({ sales, payments, customers, loadingSales, loadingPayments, 
           total: bankRes?.total || bankRes?.bank_collection || bankRes?.amount || 0,
           count: bankRes?.count || bankRes?.payment_count || bankRes?.payments?.length || 0
         });
-
-        setShabakaCollectionData({
-          total: shabakaRes?.total || shabakaRes?.shabaka_collection || shabakaRes?.pos_collection || shabakaRes?.amount || 0,
-          count: shabakaRes?.count || shabakaRes?.payment_count || shabakaRes?.payments?.length || 0
-        });
       } catch (error) {
         console.error('Error fetching dashboard stats:', error);
         // Set defaults on error
@@ -59,7 +52,6 @@ function Dashboard({ sales, payments, customers, loadingSales, loadingPayments, 
         setTodayCollectionData({ total: 0, count: 0 });
         setTodayCashData({ total: 0, count: 0 });
         setTodayBankData({ total: 0, count: 0 });
-        setShabakaCollectionData({ total: 0, count: 0 });
       } finally {
         setLoadingStats(false);
       }
@@ -112,17 +104,6 @@ function Dashboard({ sales, payments, customers, loadingSales, loadingPayments, 
       icon: CreditCard,
       color: 'info',
       count: loadingStats ? '...' : `${todayBankData.count} payments`
-    },
-    {
-      label: 'Shabaka Collection',
-      value: loadingStats ? (
-        <Loader2 size={18} className="animate-spin" />
-      ) : (
-        <><SARSymbol size={18} /> {shabakaCollectionData.total.toFixed(2)}</>
-      ),
-      icon: Smartphone,
-      color: 'danger',
-      count: loadingStats ? '...' : `${shabakaCollectionData.count} payments`
     }
   ];
 

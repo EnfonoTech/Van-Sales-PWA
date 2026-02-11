@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { Plus, Search, Loader2, X } from 'lucide-react';
 import SARSymbol from './SARSymbol';
+import SuccessDialog from './SuccessDialog';
 import { createPaymentEntry, getOutstandingInvoicesForPayment, getPaymentEntryDetails, getPaymentMethods } from '../services/api';
 import { Trash2 } from 'lucide-react';
 
@@ -72,6 +73,7 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
   };
 
   const [submitting, setSubmitting] = useState(false);
+  const [successDialog, setSuccessDialog] = useState({ isOpen: false, title: '', message: '' });
   const [selectedInvoices, setSelectedInvoices] = useState([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState([]);
@@ -221,7 +223,7 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
       setCustomerSearch('');
       setSelectedInvoices([]);
       setView('list');
-      alert('Payment collected successfully!');
+      setSuccessDialog({ isOpen: true, title: 'Success', message: 'Payment collected successfully!' });
     } catch (error) {
       console.error('Error creating payment:', error);
       
@@ -867,6 +869,13 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
   }
 
   return (
+    <>
+      <SuccessDialog
+        isOpen={successDialog.isOpen}
+        onClose={() => setSuccessDialog({ isOpen: false, title: '', message: '' })}
+        title={successDialog.title}
+        message={successDialog.message}
+      />
     <div className="payment-list fade-in">
       <div className="flex-between mb-6">
         <h1>Payment Collections</h1>
@@ -943,6 +952,7 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
         </div>
       )}
     </div>
+    </>
   );
 }
 

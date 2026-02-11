@@ -335,21 +335,21 @@ function AppContent({ onLogout }) {
     }
   };
 
-  // Primary navigation items (bottom nav) - Dashboard moved here
+  // Primary navigation items (bottom nav) - Dashboard, Sales, Sales Order, Quotation
   const primaryNavItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Home },
     { id: 'sales', label: 'Sales', icon: ShoppingCart },
-    { id: 'customers', label: 'Customers', icon: Users },
+    { id: 'sales-orders', label: 'Sales Order', icon: ClipboardList },
+    { id: 'quotations', label: 'Quotation', icon: FileCheck },
   ];
 
-  // Secondary navigation items (header menu) - Dashboard removed
+  // Secondary navigation items (header menu) - Customer first, then others
   const secondaryNavItems = [
+    { id: 'customers', label: 'Customers', icon: Users },
     { id: 'returns', label: 'Returns', icon: FileText },
     { id: 'payments', label: 'Payments', icon: null, customIcon: <SARSymbol size={20} /> },
     { id: 'stock', label: 'Stock', icon: Package },
     { id: 'leads', label: 'Leads', icon: UserPlus },
-    { id: 'quotations', label: 'Quotations', icon: FileCheck },
-    { id: 'sales-orders', label: 'Sales Orders', icon: ClipboardList },
   ];
 
   return (
