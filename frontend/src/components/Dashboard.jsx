@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DollarSign, TrendingUp, Wallet, CreditCard, Loader2 } from 'lucide-react';
 import { getTodaySales, getTodayCollection, getTodayCashCollection, getTodayBankCollection } from '../services/api';
@@ -59,6 +59,27 @@ function Dashboard({ sales, payments, customers, loadingSales, loadingPayments, 
 
     fetchDashboardStats();
   }, []);
+
+  const recentSales = useMemo(() => (
+    (sales || [])
+      .slice()
+      .sort((a, b) => new Date(b.date || b.posting_date || 0) - new Date(a.date || a.posting_date || 0))
+      .slice(0, 5)
+  ), [sales]);
+
+  const recentPayments = useMemo(() => (
+    (payments || [])
+      .slice()
+      .sort((a, b) => new Date(b.date || b.posting_date || 0) - new Date(a.date || a.posting_date || 0))
+      .slice(0, 5)
+  ), [payments]);
+
+  const customerOverview = useMemo(() => {
+    const list = customers || [];
+    const withBalance = list.filter(c => c.balance > 0).length;
+    const totalOutstanding = list.reduce((sum, c) => sum + (c.balance || 0), 0);
+    return { total: list.length, withBalance, totalOutstanding };
+  }, [customers]);
 
   const stats = [
     {
@@ -148,15 +169,7 @@ function Dashboard({ sales, payments, customers, loadingSales, loadingPayments, 
                   </tr>
                 </thead>
                 <tbody>
-                  {sales
-                    .slice()
-                    .sort((a, b) => {
-                      const dateA = new Date(a.date || a.posting_date || 0);
-                      const dateB = new Date(b.date || b.posting_date || 0);
-                      return dateB - dateA; // Sort descending (newest first)
-                    })
-                    .slice(0, 5)
-                    .map(sale => (
+                  {recentSales.map(sale => (
                       <tr 
                         key={sale.id}
                         onClick={() => navigate('/sales', { state: { saleId: sale.id } })}
@@ -203,15 +216,7 @@ function Dashboard({ sales, payments, customers, loadingSales, loadingPayments, 
                   </tr>
                 </thead>
                 <tbody>
-                  {payments
-                    .slice()
-                    .sort((a, b) => {
-                      const dateA = new Date(a.date || a.posting_date || 0);
-                      const dateB = new Date(b.date || b.posting_date || 0);
-                      return dateB - dateA; // Sort descending (newest first)
-                    })
-                    .slice(0, 5)
-                    .map(payment => (
+                  {recentPayments.map(payment => (
                       <tr 
                         key={payment.id}
                         onClick={() => navigate('/payments', { state: { paymentId: payment.id } })}
@@ -251,18 +256,16 @@ function Dashboard({ sales, payments, customers, loadingSales, loadingPayments, 
           <div className="grid grid-3">
             <div>
               <div className="text-xs text-gray-600 mb-1">Total Customers</div>
-              <div className="font-bold text-2xl">{customers.length}</div>
+              <div className="font-bold text-2xl">{customerOverview.total}</div>
             </div>
             <div>
               <div className="text-xs text-gray-600 mb-1">With Outstanding Balance</div>
-              <div className="font-bold text-2xl">
-                {customers.filter(c => c.balance > 0).length}
-              </div>
+              <div className="font-bold text-2xl">{customerOverview.withBalance}</div>
             </div>
             <div>
               <div className="text-xs text-gray-600 mb-1">Total Outstanding</div>
               <div className="font-bold text-2xl">
-                <SARSymbol size={18} /> {customers.reduce((sum, c) => sum + c.balance, 0).toFixed(2)}
+                <SARSymbol size={18} /> {customerOverview.totalOutstanding.toFixed(2)}
               </div>
             </div>
           </div>

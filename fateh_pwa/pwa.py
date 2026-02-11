@@ -4,9 +4,13 @@ import json
 import hashlib
 import secrets
 from datetime import datetime, timedelta
-from frappe import _
-from frappe.utils import getdate, flt, cint, nowdate, add_days, get_datetime
+from frappe import _, ValidationError
+from frappe.utils import getdate, flt, cint, nowdate, add_days, get_datetime, nowtime, today, strip_html, get_url
 
+try:
+    from erpnext.stock.stock_ledger import NegativeStockError
+except ImportError:
+    NegativeStockError = Exception  # fallback if erpnext not installed
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -591,9 +595,6 @@ def get_items_list():
 #         }
 
 
-
-import frappe
-from frappe.utils import flt
 
 
 @frappe.whitelist(allow_guest=False, methods=["GET"])
@@ -2500,10 +2501,6 @@ def update_sales_order():
         return {"status": "error", "message": str(e) or "Failed to update sales order"}
 
 
-import json
-import frappe
-from frappe.utils import flt, cint, getdate
-
 
 def get_conversion_factor(item_code, uom):
     if not item_code or not uom:
@@ -2530,10 +2527,6 @@ def get_conversion_factor(item_code, uom):
 
     return flt(conversion_factor)
 
-
-import json
-import frappe
-from frappe.utils import flt, cint, getdate, nowtime, today, add_days
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -2625,16 +2618,21 @@ def create_sales_invoice():
 
         # --------------------------------------------------
         # INCLUDED PAYMENT (is_pos and payments table)
+        # Accept both "payments" array and top-level "mode_of_payment"/"payment_method" for compatibility
         # --------------------------------------------------
         is_pos = cint(data.get("is_pos", 0))
-        payments_data = data.get("payments", [])
-        
-        # If payments are provided, set is_pos = 1
+        payments_data = data.get("payments") or []
+        if not isinstance(payments_data, list):
+            payments_data = []
+        # Fallback: single mode_of_payment / payment_method at top level (e.g. from some clients)
+        single_mop = data.get("mode_of_payment") or data.get("payment_method")
+        if single_mop and not payments_data:
+            payments_data = [{"mode_of_payment": single_mop, "amount": 0}]
         if payments_data and len(payments_data) > 0:
             is_pos = 1
             # Validate payment methods
             for payment in payments_data:
-                mode_of_payment = payment.get("mode_of_payment")
+                mode_of_payment = payment.get("mode_of_payment") or payment.get("payment_method")
                 if mode_of_payment and not frappe.db.exists("Mode of Payment", mode_of_payment):
                     return {
                         "status": "error",
@@ -2802,9 +2800,12 @@ def create_sales_invoice():
         # --------------------------------------------------
         if is_pos and payments_data:
             for payment_entry in payments_data:
-                mode_of_payment = payment_entry.get("mode_of_payment")
+                mode_of_payment = payment_entry.get("mode_of_payment") or payment_entry.get("payment_method")
                 amount = flt(payment_entry.get("amount", 0))
-                if mode_of_payment and amount > 0:
+                if mode_of_payment:
+                    # Allow amount 0 here; we'll set it to grand_total after calculate_taxes_and_totals
+                    if amount <= 0:
+                        amount = None  # will be set later from grand_total
                     # Get default account for mode of payment
                     mop_doc = frappe.get_doc("Mode of Payment", mode_of_payment)
                     default_account = None
@@ -2813,10 +2814,9 @@ def create_sales_invoice():
                             if mop_account.company == company:
                                 default_account = mop_account.default_account
                                 break
-                    
                     doc.append("payments", {
                         "mode_of_payment": mode_of_payment,
-                        "amount": amount,
+                        "amount": amount or 0,
                         "account": default_account
                     })
 
@@ -2847,14 +2847,30 @@ def create_sales_invoice():
         doc.due_date = tomorrow_date
         
         doc.calculate_taxes_and_totals()
-        
-        # If payments are provided, update payment amounts to match final grand_total
-        # This ensures the payment amount matches the calculated total after taxes/discounts
-        if is_pos and payments_data and len(doc.payments) > 0:
-            # Update payment amount to match grand_total (full payment)
-            for payment_row in doc.payments:
-                payment_row.amount = doc.grand_total
-                payment_row.base_amount = doc.grand_total * flt(doc.conversion_rate)
+
+        # Re-apply payments after calculate_taxes_and_totals so they are never cleared by hooks/set_missing_values
+        # and set amount to grand_total (full payment)
+        if is_pos and payments_data:
+            doc.set("payments", [])
+            for payment_entry in payments_data:
+                mode_of_payment = payment_entry.get("mode_of_payment") or payment_entry.get("payment_method")
+                if not mode_of_payment:
+                    continue
+                mop_doc = frappe.get_doc("Mode of Payment", mode_of_payment)
+                default_account = None
+                if mop_doc.accounts:
+                    for mop_account in mop_doc.accounts:
+                        if mop_account.company == company:
+                            default_account = mop_account.default_account
+                            break
+                doc.append("payments", {
+                    "mode_of_payment": mode_of_payment,
+                    "amount": doc.grand_total,
+                    "account": default_account
+                })
+            if doc.payments:
+                for payment_row in doc.payments:
+                    payment_row.base_amount = doc.grand_total * flt(doc.conversion_rate)
         
         # Update payment_schedule due_dates to tomorrow_date AFTER calculate_taxes_and_totals
         # (since calculate_taxes_and_totals might regenerate payment_schedule)
@@ -2900,12 +2916,6 @@ def create_sales_invoice():
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "Create Sales Invoice API Error")
         return {"status": "error", "message": str(e)}
-
-
-
-import frappe
-from frappe.utils import getdate
-from frappe import _
 
 
 @frappe.whitelist(allow_guest=False, methods=["GET"])
@@ -3049,12 +3059,6 @@ def get_invoice_details():
             "message": str(e)
         }
 
-##update invoice
-
-import json
-import frappe
-from frappe.utils import flt, cint, getdate, today, nowtime, add_days
-
 
 @frappe.whitelist(allow_guest=False, methods=["POST"])
 def update_sales_invoice():
@@ -3120,20 +3124,26 @@ def update_sales_invoice():
 
         # --------------------------------------------------
         # UPDATE INCLUDED PAYMENT (is_pos and payments table)
+        # Accept both "payments" array and top-level "mode_of_payment"/"payment_method"
         # --------------------------------------------------
         if "is_pos" in data:
             doc.is_pos = cint(data.get("is_pos", 0))
-        
-        payments_data = data.get("payments", [])
+
+        payments_data = data.get("payments") or []
+        if not isinstance(payments_data, list):
+            payments_data = []
+        single_mop = data.get("mode_of_payment") or data.get("payment_method")
+        if single_mop and not payments_data:
+            payments_data = [{"mode_of_payment": single_mop, "amount": doc.grand_total or 0}]
         if payments_data and len(payments_data) > 0:
             # Set is_pos = 1 if payments are provided
             doc.is_pos = 1
             # Clear existing payments and add new ones
             doc.set("payments", [])
             for payment_entry in payments_data:
-                mode_of_payment = payment_entry.get("mode_of_payment")
+                mode_of_payment = payment_entry.get("mode_of_payment") or payment_entry.get("payment_method")
                 amount = flt(payment_entry.get("amount", 0))
-                if mode_of_payment and amount > 0:
+                if mode_of_payment:
                     # Validate mode of payment exists
                     if not frappe.db.exists("Mode of Payment", mode_of_payment):
                         return {
@@ -3151,7 +3161,7 @@ def update_sales_invoice():
                     
                     doc.append("payments", {
                         "mode_of_payment": mode_of_payment,
-                        "amount": amount,
+                        "amount": amount if amount > 0 else (doc.grand_total or 0),
                         "account": default_account
                     })
         elif "is_pos" in data and cint(data.get("is_pos", 0)) == 0:
@@ -3313,15 +3323,6 @@ def update_sales_invoice():
         frappe.log_error(frappe.get_traceback(), "Update Sales Invoice Error")
         return {"status": "error", "message": str(e)}
 
-
-
-##submit Invoice
-
-import json
-import frappe
-from frappe.utils import getdate, strip_html
-from frappe import ValidationError
-from erpnext.stock.stock_ledger import NegativeStockError
 
 
 @frappe.whitelist(allow_guest=False, methods=["POST"])
@@ -3616,10 +3617,6 @@ def get_payment_entries_list():
             "status": "error",
             "message": str(e)
         }
-
-
-import frappe
-from frappe.utils import get_url
 
 
 @frappe.whitelist(allow_guest=False, methods=["GET"])
@@ -4593,177 +4590,114 @@ def get_today_sales():
         }
 
 
+def _get_today_collection_data(mode_type=None):
+    """
+    Internal: today's collection (Payment Entry + Sales Invoice payments) for current user.
+    mode_type: None = all, 'Cash' = Mode of Payment type Cash, 'Bank' = type Bank.
+    Returns (total_amount, total_count).
+    """
+    today = frappe.utils.today()
+    current_user = frappe.session.user
+    params = (today, current_user)
+
+    if mode_type is None:
+        pe_sql = """
+            SELECT COUNT(pe.name) AS c, COALESCE(SUM(pe.paid_amount), 0) AS amt
+            FROM `tabPayment Entry` pe
+            WHERE pe.posting_date = %s AND pe.docstatus = 1
+                AND pe.payment_type = 'Receive' AND pe.owner = %s
+        """
+        si_sql = """
+            SELECT COUNT(sip.name) AS c, COALESCE(SUM(sip.amount), 0) AS amt
+            FROM `tabSales Invoice Payment` sip
+            INNER JOIN `tabSales Invoice` si ON si.name = sip.parent
+            WHERE si.posting_date = %s AND si.docstatus = 1 AND si.owner = %s
+        """
+    else:
+        pe_sql = """
+            SELECT COUNT(pe.name) AS c, COALESCE(SUM(pe.paid_amount), 0) AS amt
+            FROM `tabPayment Entry` pe
+            INNER JOIN `tabMode of Payment` mop ON mop.name = pe.mode_of_payment AND mop.type = %s
+            WHERE pe.posting_date = %s AND pe.docstatus = 1
+                AND pe.payment_type = 'Receive' AND pe.owner = %s
+        """
+        si_sql = """
+            SELECT COUNT(sip.name) AS c, COALESCE(SUM(sip.amount), 0) AS amt
+            FROM `tabSales Invoice Payment` sip
+            INNER JOIN `tabSales Invoice` si ON si.name = sip.parent
+            INNER JOIN `tabMode of Payment` mop ON mop.name = sip.mode_of_payment AND mop.type = %s
+            WHERE si.posting_date = %s AND si.docstatus = 1 AND si.owner = %s
+        """
+        params = (mode_type, today, current_user)
+
+    pe_row = frappe.db.sql(pe_sql, params, as_dict=True)[0]
+    si_row = frappe.db.sql(si_sql, params, as_dict=True)[0]
+    total_amount = flt(pe_row.amt or 0) + flt(si_row.amt or 0)
+    total_count = cint(pe_row.c or 0) + cint(si_row.c or 0)
+    return total_amount, total_count
+
+
+def _api_error(title, message=None):
+    """Return standard error response and log."""
+    frappe.log_error(title, frappe.get_traceback())
+    return {"status": "error", "message": message or str(frappe.get_traceback())}
+
 
 @frappe.whitelist(allow_guest=False, methods=["GET"])
 def get_today_collection():
     """
     Today's total collection (logged-in user only).
-    Includes both Payment Entry and included payments on Sales Invoices.
-    No filter by mode of payment — shows all.
+    Includes both Payment Entry and included payments on Sales Invoices. No mode filter.
     """
     try:
         today = frappe.utils.today()
-        current_user = frappe.session.user
-
-        # Payment Entry (receive, today, submitted, owner)
-        pe_data = frappe.db.sql("""
-            SELECT
-                COUNT(pe.name) AS payment_count,
-                COALESCE(SUM(pe.paid_amount), 0) AS total_collection
-            FROM `tabPayment Entry` pe
-            WHERE pe.posting_date = %s
-                AND pe.docstatus = 1
-                AND pe.payment_type = 'Receive'
-                AND pe.owner = %s
-        """, (today, current_user), as_dict=True)[0]
-
-        # Included payments on Sales Invoices (today, submitted, owner)
-        si_data = frappe.db.sql("""
-            SELECT
-                COUNT(sip.name) AS payment_count,
-                COALESCE(SUM(sip.amount), 0) AS total_collection
-            FROM `tabSales Invoice Payment` sip
-            INNER JOIN `tabSales Invoice` si ON si.name = sip.parent
-            WHERE si.posting_date = %s
-                AND si.docstatus = 1
-                AND si.owner = %s
-        """, (today, current_user), as_dict=True)[0]
-
-        total_amount = flt(pe_data.total_collection or 0) + flt(si_data.total_collection or 0)
-        total_count = cint(pe_data.payment_count or 0) + cint(si_data.payment_count or 0)
-
+        total_amount, total_count = _get_today_collection_data(mode_type=None)
         return {
             "status": "success",
             "date": today,
             "amount": total_amount,
             "total": total_amount,
             "payments": total_count,
-            "payment_count": total_count
+            "payment_count": total_count,
         }
-
     except Exception as e:
-        frappe.log_error("Today Collection API Error", frappe.get_traceback())
-        return {
-            "status": "error",
-            "message": str(e)
-        }
-
-
+        return _api_error("Today Collection API Error", str(e))
 
 
 @frappe.whitelist(allow_guest=False, methods=["GET"])
 def get_today_cash_collection():
-    """
-    Today's CASH collection (logged-in user only).
-    Uses Mode of Payment type = 'Cash' (not name). Applies to both
-    Payment Entry and included payments on Sales Invoices.
-    """
+    """Today's CASH collection (Mode of Payment type = 'Cash'). PE + Sales Invoice payments."""
     try:
         today = frappe.utils.today()
-        current_user = frappe.session.user
-
-        # Payment Entry where Mode of Payment type = Cash
-        pe_data = frappe.db.sql("""
-            SELECT
-                COUNT(pe.name) AS payment_count,
-                COALESCE(SUM(pe.paid_amount), 0) AS cash_collection
-            FROM `tabPayment Entry` pe
-            INNER JOIN `tabMode of Payment` mop ON mop.name = pe.mode_of_payment AND mop.type = 'Cash'
-            WHERE pe.posting_date = %s
-                AND pe.docstatus = 1
-                AND pe.payment_type = 'Receive'
-                AND pe.owner = %s
-        """, (today, current_user), as_dict=True)[0]
-
-        # Sales Invoice included payments where Mode of Payment type = Cash
-        si_data = frappe.db.sql("""
-            SELECT
-                COUNT(sip.name) AS payment_count,
-                COALESCE(SUM(sip.amount), 0) AS cash_collection
-            FROM `tabSales Invoice Payment` sip
-            INNER JOIN `tabSales Invoice` si ON si.name = sip.parent
-            INNER JOIN `tabMode of Payment` mop ON mop.name = sip.mode_of_payment AND mop.type = 'Cash'
-            WHERE si.posting_date = %s
-                AND si.docstatus = 1
-                AND si.owner = %s
-        """, (today, current_user), as_dict=True)[0]
-
-        total_amount = flt(pe_data.cash_collection or 0) + flt(si_data.cash_collection or 0)
-        total_count = cint(pe_data.payment_count or 0) + cint(si_data.payment_count or 0)
-
+        total_amount, total_count = _get_today_collection_data(mode_type="Cash")
         return {
             "status": "success",
             "date": today,
             "amount": total_amount,
             "total": total_amount,
             "payments": total_count,
-            "payment_count": total_count
+            "payment_count": total_count,
         }
-
     except Exception as e:
-        frappe.log_error("Cash Collection API Error", frappe.get_traceback())
-        return {
-            "status": "error",
-            "message": str(e)
-        }
-
+        return _api_error("Cash Collection API Error", str(e))
 
 
 @frappe.whitelist(allow_guest=False, methods=["GET"])
 def get_today_bank_collection():
-    """
-    Today's BANK collection (logged-in user only).
-    Uses Mode of Payment type = 'Bank' (not name). Applies to both
-    Payment Entry and included payments on Sales Invoices.
-    """
+    """Today's BANK collection (Mode of Payment type = 'Bank'). PE + Sales Invoice payments."""
     try:
         today = frappe.utils.today()
-        current_user = frappe.session.user
-
-        # Payment Entry where Mode of Payment type = Bank
-        pe_data = frappe.db.sql("""
-            SELECT
-                COUNT(pe.name) AS payment_count,
-                COALESCE(SUM(pe.paid_amount), 0) AS bank_collection
-            FROM `tabPayment Entry` pe
-            INNER JOIN `tabMode of Payment` mop ON mop.name = pe.mode_of_payment AND mop.type = 'Bank'
-            WHERE pe.posting_date = %s
-                AND pe.docstatus = 1
-                AND pe.payment_type = 'Receive'
-                AND pe.owner = %s
-        """, (today, current_user), as_dict=True)[0]
-
-        # Sales Invoice included payments where Mode of Payment type = Bank
-        si_data = frappe.db.sql("""
-            SELECT
-                COUNT(sip.name) AS payment_count,
-                COALESCE(SUM(sip.amount), 0) AS bank_collection
-            FROM `tabSales Invoice Payment` sip
-            INNER JOIN `tabSales Invoice` si ON si.name = sip.parent
-            INNER JOIN `tabMode of Payment` mop ON mop.name = sip.mode_of_payment AND mop.type = 'Bank'
-            WHERE si.posting_date = %s
-                AND si.docstatus = 1
-                AND si.owner = %s
-        """, (today, current_user), as_dict=True)[0]
-
-        total_amount = flt(pe_data.bank_collection or 0) + flt(si_data.bank_collection or 0)
-        total_count = cint(pe_data.payment_count or 0) + cint(si_data.payment_count or 0)
-
+        total_amount, total_count = _get_today_collection_data(mode_type="Bank")
         return {
             "status": "success",
             "date": today,
             "amount": total_amount,
             "total": total_amount,
             "payments": total_count,
-            "payment_count": total_count
+            "payment_count": total_count,
         }
-
     except Exception as e:
-        frappe.log_error("Bank Collection API Error", frappe.get_traceback())
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+        return _api_error("Bank Collection API Error", str(e))
 
 
 @frappe.whitelist(allow_guest=False, methods=["GET"])
@@ -4800,14 +4734,6 @@ def get_daily_pos_collection():
             "status": "error",
             "message": str(e)
         }
-
-
-
-
-import frappe
-import json
-from frappe.utils import getdate, flt, cint, nowdate
-from frappe import _
 
 
 @frappe.whitelist(allow_guest=False, methods=["POST"])

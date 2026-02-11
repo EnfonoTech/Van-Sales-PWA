@@ -20,6 +20,20 @@ const LeadModule = lazy(() => import('./components/LeadModule'));
 const QuotationModule = lazy(() => import('./components/QuotationModule'));
 const SalesOrderModule = lazy(() => import('./components/SalesOrderModule'));
 
+// Preload route chunk on hover for faster navigation
+const preload = (loader) => { loader(); };
+const routePreload = {
+  dashboard: () => preload(() => import('./components/Dashboard')),
+  sales: () => preload(() => import('./components/SalesModule')),
+  customers: () => preload(() => import('./components/CustomerModule')),
+  returns: () => preload(() => import('./components/SalesReturnModule')),
+  payments: () => preload(() => import('./components/PaymentModule')),
+  stock: () => preload(() => import('./components/StockModule')),
+  leads: () => preload(() => import('./components/LeadModule')),
+  quotations: () => preload(() => import('./components/QuotationModule')),
+  'sales-orders': () => preload(() => import('./components/SalesOrderModule')),
+};
+
 // Loading fallback component
 const RouteLoader = () => (
   <div className="card" style={{ minHeight: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -264,7 +278,8 @@ function AppContent({ onLogout }) {
       try {
         switch (currentView) {
           case 'dashboard':
-            await Promise.all([fetchCustomers(), fetchSales(), fetchItems(), fetchPayments()]);
+            // Dashboard only needs customers, sales, payments (not items — saves 1 request)
+            await Promise.all([fetchCustomers(), fetchSales(), fetchPayments()]);
             break;
           case 'sales':
             await Promise.all([fetchCustomers(), fetchSales(), fetchItems()]);
@@ -370,6 +385,8 @@ function AppContent({ onLogout }) {
                   to={`/${item.id}`}
                   className={`nav-item-secondary ${currentView === item.id ? 'active' : ''}`}
                   title={item.label}
+                  onMouseEnter={() => routePreload[item.id]?.()}
+                  onFocus={() => routePreload[item.id]?.()}
                 >
                   {item.customIcon || (item.icon && <item.icon size={20} />)}
                 </Link>
@@ -417,6 +434,8 @@ function AppContent({ onLogout }) {
             key={item.id}
             to={`/${item.id}`}
             className={`nav-item-bottom ${currentView === item.id ? 'active' : ''}`}
+            onMouseEnter={() => routePreload[item.id]?.()}
+            onFocus={() => routePreload[item.id]?.()}
           >
             <div className="nav-icon-bottom">
               <item.icon size={24} />

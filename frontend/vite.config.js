@@ -18,6 +18,7 @@ export default defineConfig(({ mode }) => ({
   build: {
     outDir,
     emptyOutDir: true,
+    target: 'es2020',
     rollupOptions: {
       output: {
         manualChunks: {
@@ -27,12 +28,14 @@ export default defineConfig(({ mode }) => ({
         chunkFileNames: 'js/[name]-[hash].js',
         entryFileNames: 'js/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash].[ext]',
+        compact: true,
       },
     },
     minify: 'esbuild',
     chunkSizeWarningLimit: 1000,
     sourcemap: false,
     assetsInlineLimit: 4096,
+    cssCodeSplit: true,
   },
   server: mode === 'development' ? {
     host: true,

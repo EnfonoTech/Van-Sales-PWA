@@ -322,6 +322,11 @@ const transformInvoiceFromAPI = (apiInvoice) => {
     taxAmount = parseFloat(apiInvoice.tax);
   }
   
+  // Payment method: use payments table (POS) or custom_mode_of_payment for display
+  const is_pos = apiInvoice.is_pos === 1 || apiInvoice.is_pos === true;
+  const payments = Array.isArray(apiInvoice.payments) ? apiInvoice.payments : [];
+  const custom_mode_of_payment = apiInvoice.custom_mode_of_payment || '';
+
   return {
     id: invoiceName,
     invoice_name: invoiceName, // Preserve original field name for API calls
@@ -349,7 +354,10 @@ const transformInvoiceFromAPI = (apiInvoice) => {
     status: apiInvoice.status || (apiInvoice.docstatus === 1 ? 'Submitted' : apiInvoice.docstatus === 0 ? 'Draft' : 'Cancelled'),
     docstatus: apiInvoice.docstatus,
     outstanding_amount: parseFloat(apiInvoice.outstanding_amount || 0),
-    pdf_url: apiInvoice.pdf_url || ''
+    pdf_url: apiInvoice.pdf_url || '',
+    is_pos,
+    payments,
+    custom_mode_of_payment
   };
 };
 
@@ -395,6 +403,13 @@ const transformInvoiceToAPI = (uiInvoice) => {
   }
   if (uiInvoice.payments && Array.isArray(uiInvoice.payments)) {
     apiData.payments = uiInvoice.payments;
+    // Also send top-level mode_of_payment for backend fallback (first payment method)
+    if (uiInvoice.payments.length > 0 && (uiInvoice.payments[0].mode_of_payment || uiInvoice.payments[0].payment_method)) {
+      apiData.mode_of_payment = uiInvoice.payments[0].mode_of_payment || uiInvoice.payments[0].payment_method;
+    }
+  }
+  if (uiInvoice.mode_of_payment) {
+    apiData.mode_of_payment = uiInvoice.mode_of_payment;
   }
 
   return apiData;
@@ -426,6 +441,12 @@ const buildPartialInvoiceUpdate = (uiInvoice) => {
   }
   if (uiInvoice.payments && Array.isArray(uiInvoice.payments)) {
     payload.payments = uiInvoice.payments;
+    if (uiInvoice.payments.length > 0 && (uiInvoice.payments[0].mode_of_payment || uiInvoice.payments[0].payment_method)) {
+      payload.mode_of_payment = uiInvoice.payments[0].mode_of_payment || uiInvoice.payments[0].payment_method;
+    }
+  }
+  if (uiInvoice.mode_of_payment) {
+    payload.mode_of_payment = uiInvoice.mode_of_payment;
   }
 
   // Items (rate to 2 decimal places)
@@ -1923,105 +1944,30 @@ export const getCustomerBillingAndPayments = async (customerName) => {
   }
 };
 
-/**
- * Get today's sales total
- * @returns {Promise<Object>} Today's sales data
- */
-export const getTodaySales = async () => {
+/** Normalize dashboard stat API response (message.data / message / response) */
+const normalizeStatResponse = (response) => {
+  if (!response) return response;
+  if (response.message && typeof response.message === 'object' && response.message.data) return response.message.data;
+  if (response.message && typeof response.message === 'object') return response.message;
+  return response;
+};
+
+/** Single helper for cached GET stat endpoint */
+const fetchTodayStat = async (method, label) => {
   try {
-    const response = await apiRequest('/method/fateh_pwa.pwa.get_today_sales', {}, true);
-    let data = response;
-    if (response && response.message && typeof response.message === 'object' && response.message.data) {
-      data = response.message.data;
-    } else if (response && response.message && typeof response.message === 'object') {
-      data = response.message;
-    }
-    return data;
+    const response = await apiRequest(`/method/fateh_pwa.pwa.${method}`, {}, true);
+    return normalizeStatResponse(response);
   } catch (error) {
-    console.error('Error fetching today sales:', error);
+    console.error(`Error fetching ${label}:`, error);
     throw error;
   }
 };
 
-/**
- * Get today's collection total
- * @returns {Promise<Object>} Today's collection data
- */
-export const getTodayCollection = async () => {
-  try {
-    const response = await apiRequest('/method/fateh_pwa.pwa.get_today_collection', {}, true);
-    let data = response;
-    if (response && response.message && typeof response.message === 'object' && response.message.data) {
-      data = response.message.data;
-    } else if (response && response.message && typeof response.message === 'object') {
-      data = response.message;
-    }
-    return data;
-  } catch (error) {
-    console.error('Error fetching today collection:', error);
-    throw error;
-  }
-};
-
-/**
- * Get today's cash collection total
- * @returns {Promise<Object>} Today's cash collection data
- */
-export const getTodayCashCollection = async () => {
-  try {
-    const response = await apiRequest('/method/fateh_pwa.pwa.get_today_cash_collection', {}, true);
-    let data = response;
-    if (response && response.message && typeof response.message === 'object' && response.message.data) {
-      data = response.message.data;
-    } else if (response && response.message && typeof response.message === 'object') {
-      data = response.message;
-    }
-    return data;
-  } catch (error) {
-    console.error('Error fetching today cash collection:', error);
-    throw error;
-  }
-};
-
-/**
- * Get today's bank collection total
- * @returns {Promise<Object>} Today's bank collection data
- */
-export const getTodayBankCollection = async () => {
-  try {
-    const response = await apiRequest('/method/fateh_pwa.pwa.get_today_bank_collection', {}, true);
-    let data = response;
-    if (response && response.message && typeof response.message === 'object' && response.message.data) {
-      data = response.message.data;
-    } else if (response && response.message && typeof response.message === 'object') {
-      data = response.message;
-    }
-    return data;
-  } catch (error) {
-    console.error('Error fetching today bank collection:', error);
-    throw error;
-  }
-};
-
-/**
- * Get daily POS (Shabaka) collection total
- * @returns {Promise<Object>} Daily POS collection data
- */
-export const getDailyPosCollection = async () => {
-  try {
-    const response = await apiRequest('/method/fateh_pwa.pwa.get_daily_pos_collection', {}, true);
-    let data = response;
-    if (response && response.message && typeof response.message === 'object' && response.message.data) {
-      data = response.message.data;
-    } else if (response && response.message && typeof response.message === 'object') {
-      data = response.message;
-    }
-    return data;
-  } catch (error) {
-    console.error('Error fetching daily POS collection:', error);
-    throw error;
-  }
-};
+export const getTodaySales = () => fetchTodayStat('get_today_sales', 'today sales');
+export const getTodayCollection = () => fetchTodayStat('get_today_collection', 'today collection');
+export const getTodayCashCollection = () => fetchTodayStat('get_today_cash_collection', 'today cash collection');
+export const getTodayBankCollection = () => fetchTodayStat('get_today_bank_collection', 'today bank collection');
+export const getDailyPosCollection = () => fetchTodayStat('get_daily_pos_collection', 'daily POS collection');
 
 // ============================================================================
 // SALES RETURN APIs

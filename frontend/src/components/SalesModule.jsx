@@ -961,6 +961,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
     // Note: Amount will be recalculated by backend based on final grand_total after taxes
     if (selectedPaymentMethod) {
       invoiceData.is_pos = 1;
+      invoiceData.mode_of_payment = selectedPaymentMethod; // Top-level fallback for backend
       invoiceData.payments = [{
         mode_of_payment: selectedPaymentMethod,
         amount: grandTotal  // Will be adjusted by backend to match final grand_total
@@ -981,6 +982,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         // Include payment if selected
         if (selectedPaymentMethod) {
           minimalUpdate.is_pos = 1;
+          minimalUpdate.mode_of_payment = selectedPaymentMethod;
           minimalUpdate.payments = [{
             mode_of_payment: selectedPaymentMethod,
             amount: grandTotal
@@ -1750,24 +1752,21 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                 </div>
               </div>
 
-              {/* Payment Method (when included) */}
-              {(invoice.is_pos && invoice.payments && invoice.payments.length > 0) ? (
-                <div className="mb-4">
-                  <h3 className="mb-2" style={{ fontSize: '1rem', color: 'var(--gray-700)' }}>Payment Method</h3>
-                  <div style={{ background: 'var(--gray-50)', padding: '16px', borderRadius: 'var(--radius)' }}>
-                    <div className="font-semibold">
-                      {invoice.payments.map((p) => p.mode_of_payment).filter(Boolean).join(', ') || '—'}
+              {/* Payment Method: show from payments table (POS) or custom_mode_of_payment, else Credit */}
+              {(() => {
+                const paymentLabel = (invoice.is_pos && invoice.payments && invoice.payments.length > 0)
+                  ? invoice.payments.map((p) => p.mode_of_payment || p.payment_method).filter(Boolean).join(', ')
+                  : (invoice.custom_mode_of_payment && String(invoice.custom_mode_of_payment).trim()) || '';
+                const displayMethod = paymentLabel || 'Credit';
+                return (
+                  <div className="mb-4">
+                    <h3 className="mb-2" style={{ fontSize: '1rem', color: 'var(--gray-700)' }}>Payment Method</h3>
+                    <div style={{ background: 'var(--gray-50)', padding: '16px', borderRadius: 'var(--radius)' }}>
+                      <div className="font-semibold">{displayMethod}</div>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="mb-4">
-                  <h3 className="mb-2" style={{ fontSize: '1rem', color: 'var(--gray-700)' }}>Payment Method</h3>
-                  <div style={{ background: 'var(--gray-50)', padding: '16px', borderRadius: 'var(--radius)' }}>
-                    <div className="font-semibold">Credit</div>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
 
             {/* Invoice Items */}
