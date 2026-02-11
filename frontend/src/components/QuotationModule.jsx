@@ -73,6 +73,8 @@ function QuotationModule({ customers = [], items = [] }) {
   const getQuantityValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) > 0 ? parseFloat(v) : 1);
   const getDiscountValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) >= 0 ? parseFloat(v) : 0);
   const formatDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
+  const to2 = (v) => (Math.round(Number(v) * 100) / 100).toFixed(2);
+  const round2 = (v) => Math.round(Number(v) * 100) / 100;
 
   const calculateSubtotal = () =>
     lineItems.reduce((sum, item) => sum + getPriceValue(item.price) * getQuantityValue(item.quantity), 0);
@@ -266,14 +268,14 @@ function QuotationModule({ customers = [], items = [] }) {
         const newItem = {
           code: itemDetails?.code || code,
           name: itemDetails?.name || item.name,
-          price: String(initialPrice),
-          price_list_rate: priceListRate,
+          price: to2(initialPrice),
+          price_list_rate: Number(to2(priceListRate)),
           uom: defaultUOM,
           stock_uom: itemDetails?.stock_uom || 'Nos',
           sales_uom: itemDetails?.sales_uom || itemDetails?.stock_uom || 'Nos',
           uom_conversions: uomConversions,
           quantity: '1',
-          originalPrice: priceListRate,
+          originalPrice: Number(to2(priceListRate)),
         };
         setLineItems((prev) => [...prev, newItem]);
       } catch {
@@ -290,14 +292,14 @@ function QuotationModule({ customers = [], items = [] }) {
           {
             code: item.code || item.item_code,
             name: item.name || item.item_name,
-            price: String(initialPrice),
-            price_list_rate: basePrice,
+            price: to2(initialPrice),
+            price_list_rate: Number(to2(basePrice)),
             uom: defaultUOM,
             stock_uom: item.stock_uom || 'Nos',
             sales_uom: item.sales_uom || item.stock_uom || 'Nos',
             uom_conversions: uomConversions,
             quantity: '1',
-            originalPrice: basePrice,
+            originalPrice: Number(to2(basePrice)),
           },
         ]);
       } finally {
@@ -310,7 +312,9 @@ function QuotationModule({ customers = [], items = [] }) {
   };
 
   const handleUpdatePrice = (code, value) => {
-    setLineItems((prev) => prev.map((i) => (i.code === code ? { ...i, price: sanitizeDecimalInput(value) } : i)));
+    const sanitized = sanitizeDecimalInput(value);
+    const rounded = sanitized === '' ? '' : to2(parseFloat(sanitized) || 0);
+    setLineItems((prev) => prev.map((i) => (i.code === code ? { ...i, price: rounded } : i)));
   };
   const handleUpdateQuantity = (code, value) => {
     setLineItems((prev) => prev.map((i) => (i.code === code ? { ...i, quantity: sanitizeIntegerInput(value) } : i)));
@@ -329,7 +333,7 @@ function QuotationModule({ customers = [], items = [] }) {
         if (currentUOM === 'Nos' && value === 'Carton') newPrice = priceListRate * factor;
         else if (currentUOM === 'Carton' && value === 'Nos') newPrice = currentPrice / factor;
         else newPrice = currentPrice;
-        return { ...i, uom: value, price: String(newPrice) };
+        return { ...i, uom: value, price: to2(newPrice) };
       })
     );
   };
@@ -407,18 +411,21 @@ function QuotationModule({ customers = [], items = [] }) {
       const details = await getQuotationDetails(doc.name);
       const quotationDoc = details.quotation || details;
       
-      // Map items into form structure
-      const itemsForForm = (quotationDoc.items || []).map(item => ({
-        code: item.item_code || item.code,
-        name: item.item_name || item.name,
-        price: (item.rate || item.price || 0).toString(),
-        uom: item.uom || item.sales_uom || item.stock_uom || 'Nos',
-        stock_uom: item.stock_uom || 'Nos',
-        sales_uom: item.sales_uom || item.stock_uom || 'Nos',
-        uom_conversions: item.uom_conversions || [],
-        quantity: (item.qty || item.quantity || 1).toString(),
-        originalPrice: item.price_list_rate || item.rate || item.price || 0
-      }));
+      // Map items into form structure; price to 2 decimal places
+      const itemsForForm = (quotationDoc.items || []).map(item => {
+        const p = item.rate ?? item.price ?? 0;
+        return {
+          code: item.item_code || item.code,
+          name: item.item_name || item.name,
+          price: to2(p),
+          uom: item.uom || item.sales_uom || item.stock_uom || 'Nos',
+          stock_uom: item.stock_uom || 'Nos',
+          sales_uom: item.sales_uom || item.stock_uom || 'Nos',
+          uom_conversions: item.uom_conversions || [],
+          quantity: (item.qty || item.quantity || 1).toString(),
+          originalPrice: Number(to2(item.price_list_rate ?? item.rate ?? item.price ?? 0))
+        };
+      });
       
       // Set party selection
       setQuotationTo(quotationDoc.quotation_to || 'Customer');
@@ -587,7 +594,7 @@ function QuotationModule({ customers = [], items = [] }) {
         item_code: i.code,
         item_name: i.name || i.item_name || '',
         qty: getQuantityValue(i.quantity),
-        rate: getPriceValue(i.price),
+        rate: round2(getPriceValue(i.price)),
         uom: i.uom || i.stock_uom || 'Nos',
       }));
       

@@ -464,8 +464,9 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
 
   const handleUpdatePrice = (code, value) => {
     const sanitized = sanitizeDecimalInput(value);
+    const rounded = sanitized === '' ? '' : (Math.round(parseFloat(sanitized) * 100) / 100).toFixed(2);
     setInvoiceItems(invoiceItems.map(item =>
-      item.code === code ? { ...item, price: sanitized } : item
+      item.code === code ? { ...item, price: rounded } : item
     ));
   };
 

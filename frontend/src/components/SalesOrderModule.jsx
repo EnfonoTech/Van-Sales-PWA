@@ -19,6 +19,8 @@ import TransactionDetailLayout from './TransactionDetailLayout';
 
 const sanitizeDecimalInput = (value = '') => value.replace(/[^0-9.]/g, '');
 const sanitizeIntegerInput = (value = '') => value.replace(/[^0-9]/g, '');
+const to2 = (v) => (Number.isFinite(Number(v)) ? (Math.round(Number(v) * 100) / 100).toFixed(2) : '0.00');
+const round2 = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : 0);
 
 function SalesOrderModule({ customers = [], items = [] }) {
   const navigate = useNavigate();
@@ -222,7 +224,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
         const newItem = {
           code: itemDetails?.code || code,
           name: itemDetails?.name || item.name,
-          price: String(initialPrice),
+          price: to2(initialPrice),
           price_list_rate: priceListRate,
           uom: defaultUOM,
           stock_uom: itemDetails?.stock_uom || 'Nos',
@@ -246,7 +248,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
           {
             code: item.code || item.item_code,
             name: item.name || item.item_name,
-            price: String(initialPrice),
+            price: to2(initialPrice),
             price_list_rate: basePrice,
             uom: defaultUOM,
             stock_uom: item.stock_uom || 'Nos',
@@ -266,7 +268,9 @@ function SalesOrderModule({ customers = [], items = [] }) {
   };
 
   const handleUpdatePrice = (code, value) => {
-    setLineItems((prev) => prev.map((i) => (i.code === code ? { ...i, price: sanitizeDecimalInput(value) } : i)));
+    const sanitized = sanitizeDecimalInput(value);
+    const rounded = sanitized === '' ? '' : to2(parseFloat(sanitized) || 0);
+    setLineItems((prev) => prev.map((i) => (i.code === code ? { ...i, price: rounded } : i)));
   };
   const handleUpdateQuantity = (code, value) => {
     setLineItems((prev) => prev.map((i) => (i.code === code ? { ...i, quantity: sanitizeIntegerInput(value) } : i)));
@@ -285,7 +289,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
         if (currentUOM === 'Nos' && value === 'Carton') newPrice = priceListRate * factor;
         else if (currentUOM === 'Carton' && value === 'Nos') newPrice = currentPrice / factor;
         else newPrice = currentPrice;
-        return { ...i, uom: value, price: String(newPrice) };
+        return { ...i, uom: value, price: to2(newPrice) };
       })
     );
   };
@@ -334,7 +338,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
       const itemsForForm = (orderDoc.items || []).map(item => ({
         code: item.item_code || item.code,
         name: item.item_name || item.name,
-        price: (item.rate || item.price || 0).toString(),
+        price: to2(item.rate || item.price || 0),
         uom: item.uom || item.sales_uom || item.stock_uom || 'Nos',
         stock_uom: item.stock_uom || 'Nos',
         sales_uom: item.sales_uom || item.stock_uom || 'Nos',
@@ -489,7 +493,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
         item_code: i.code,
         item_name: i.name || i.item_name || '',
         qty: getQuantityValue(i.quantity),
-        rate: getPriceValue(i.price),
+        rate: round2(getPriceValue(i.price)),
         uom: i.uom || i.stock_uom || 'Nos',
       }));
       
