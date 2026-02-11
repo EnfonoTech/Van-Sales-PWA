@@ -903,7 +903,7 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
                   <th>Customer</th>
                   <th>Amount</th>
                   <th>Method</th>
-                  <th>Reference</th>
+                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -931,7 +931,11 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
                         {payment.paymentMethod}
                       </span>
                     </td>
-                    <td className="text-gray-600">{payment.reference || '-'}</td>
+                    <td>
+                      <span className={`badge ${payment.status === 'Submitted' ? 'badge-success' : payment.status === 'Cancelled' ? 'badge-danger' : 'badge-warning'}`}>
+                        {payment.status || 'Draft'}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>

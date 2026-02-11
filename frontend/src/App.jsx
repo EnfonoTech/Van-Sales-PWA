@@ -159,13 +159,14 @@ function AppContent({ onLogout }) {
     setDataStatus(prev => ({ ...prev, payments: 'loading' }));
     try {
       const paymentsData = await getPaymentEntriesList({ limit: 50 });
+      const docstatusToStatus = (docstatus) => (docstatus === 1 ? 'Submitted' : docstatus === 2 ? 'Cancelled' : 'Draft');
       const formattedPayments = Array.isArray(paymentsData) ? paymentsData.map(entry => ({
         id: entry.name || entry.payment_entry || entry.id || entry.reference_name || `PAY-${Date.now()}`,
         date: entry.posting_date || entry.date || new Date().toISOString().split('T')[0],
         customerName: entry.party || entry.customer || entry.party_name || 'Customer',
         amount: parseFloat(entry.paid_amount || entry.amount || entry.received_amount || 0),
         paymentMethod: entry.mode_of_payment || entry.payment_method || 'Cash',
-        reference: entry.reference_no || entry.reference || entry.reference_name || ''
+        status: docstatusToStatus(entry.docstatus)
       })) : [];
       setPayments(formattedPayments);
       loadedRefs.current.payments = true;

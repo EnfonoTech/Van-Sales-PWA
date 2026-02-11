@@ -3587,6 +3587,7 @@ def get_payment_entries_list():
             fields=[
                 "name",
                 "posting_date",
+                "docstatus",
                 "payment_type",
                 "party_type",
                 "party",
