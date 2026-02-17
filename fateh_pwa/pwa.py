@@ -13,18 +13,43 @@ except ImportError:
     NegativeStockError = Exception  # fallback if erpnext not installed
 
 
+def _resolve_login_id(login_input):
+    """
+    Resolve login input (email or username) to User document name.
+    Frappe User.name can be email, or a short id; User also has .email and .username.
+    """
+    if not login_input or not isinstance(login_input, str):
+        return None
+    login_input = login_input.strip()
+    if not login_input:
+        return None
+    # 1. Match by User name (Frappe primary key)
+    if frappe.db.exists("User", login_input):
+        return login_input
+    # 2. Match by email
+    user_id = frappe.db.get_value("User", {"email": login_input}, "name")
+    if user_id:
+        return user_id
+    # 3. Match by username if System Settings allow it
+    if cint(frappe.db.get_single_value("System Settings", "allow_login_using_user_name")):
+        user_id = frappe.db.get_value("User", {"username": login_input}, "name")
+        if user_id:
+            return user_id
+    return None
+
+
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def login():
     """
-    Custom login API using email and password
+    Custom login API using email or username and password
     
     Method: POST
-    URL: /api/method/your_app.api.login
+    URL: /api/method/fateh_pwa.pwa.login
     Content-Type: application/json
     
     Body:
     {
-        "email": "user@example.com",
+        "email": "user@example.com" or "username",
         "password": "your_password"
     }
     
@@ -34,24 +59,31 @@ def login():
     try:
         data = json.loads(frappe.request.data) if frappe.request.data else frappe.form_dict
         
-        email = data.get("email")
-        password = data.get("password")
+        login_input = data.get("email") or data.get("usr")  # support both "email" and "usr"
+        password = data.get("password") or data.get("pwd")
         
-        if not email or not password:
+        if not login_input or not password:
             return {
                 "status": "error",
-                "message": "Email and password are required"
+                "message": "Email/username and password are required"
+            }
+        
+        user_id = _resolve_login_id(login_input)
+        if not user_id:
+            return {
+                "status": "error",
+                "message": "Invalid email or password"
             }
         
         try:
-            frappe.auth.check_password(email, password)
+            frappe.auth.check_password(user_id, password)
         except frappe.exceptions.AuthenticationError:
             return {
                 "status": "error",
                 "message": "Invalid email or password"
             }
         
-        user = frappe.get_doc("User", email)
+        user = frappe.get_doc("User", user_id)
         
         if user.enabled == 0:
             return {
@@ -73,13 +105,13 @@ def login():
         else:
             api_secret = user.get_password('api_secret')
         
-        token = generate_custom_token(email)
+        token = generate_custom_token(user_id)
         
         return {
             "status": "success",
             "message": "Login successful",
             "data": {
-                "user": email,
+                "user": user_id,
                 "full_name": user.full_name,
                 "user_image": user.user_image,
                 "token": token,
@@ -1178,14 +1210,17 @@ def build_consolidated_taxes(company):
 
 
 
-@frappe.whitelist(allow_guest=True, methods=["GET"])
+@frappe.whitelist(allow_guest=False, methods=["GET"])
 def get_customers_list():
     """
     API: Customers list with calculated outstanding balance
 
-    Show customers where:
-    - User is Sales Person
-    - OR Sales Person is completely blank
+    Only for logged-in users. Shows customers assigned to the current user:
+    - Sales Team: Customer's Sales Team contains current user's Sales Person (Employee -> Sales Person), OR
+    - Owner: Customer owner is current user, OR
+    - ToDo: Customer is assigned to current user via ToDo (allocated_to).
+
+    Used by Sales, Quotations, Sales Orders, Returns, and Payment Collection.
 
     Outstanding:
     - ONLY for invoices created by the logged-in user
@@ -1227,6 +1262,7 @@ def get_customers_list():
             fields=[
                 "name",
                 "customer_name",
+                "owner",
                 "custom_customer_name_arabic",
                 "customer_type",
                 "customer_group",
@@ -1240,30 +1276,39 @@ def get_customers_list():
             order_by="customer_name asc"
         )
 
+        # Customers assigned to current user via ToDo (same pattern as get_lead_list)
+        assigned_customer_names = set(
+            frappe.get_all(
+                "ToDo",
+                filters={
+                    "reference_type": "Customer",
+                    "allocated_to": current_user,
+                    "status": ["!=", "Cancelled"],
+                },
+                pluck="reference_name",
+            )
+        )
+
         result = []
 
         # -------------------------------------------------
-        # APPLY SALES PERSON VISIBILITY + OUTSTANDING LOGIC
-        # Only show customers linked to the current user (Employee -> Sales Person -> Customer Sales Team)
+        # VISIBILITY: show customers assigned to current user
+        # - Sales Team contains user's Sales Person, OR owner = current user, OR assigned via ToDo
         # -------------------------------------------------
         for cust in customers:
-
             sales_team = frappe.get_all(
                 "Sales Team",
                 filters={"parent": cust["name"]},
-                fields=["sales_person"]
+                fields=["sales_person"],
             )
-
-            # -------------------------
-            # VISIBILITY: only customers where current user's Sales Person is in Sales Team
-            # If customer has no Sales Team, exclude. If user has no Sales Person, exclude all.
-            # -------------------------
-            if not sales_person:
-                include_customer = False
-            elif not sales_team:
-                include_customer = False
-            else:
-                include_customer = any(st.get("sales_person") == sales_person for st in sales_team)
+            by_sales_team = bool(
+                sales_person
+                and sales_team
+                and any(st.get("sales_person") == sales_person for st in sales_team)
+            )
+            by_owner = cust.get("owner") == current_user
+            by_todo = cust["name"] in assigned_customer_names
+            include_customer = by_sales_team or by_owner or by_todo
 
             if not include_customer:
                 continue
@@ -2670,7 +2715,7 @@ def create_sales_invoice():
                     return {
                         "status": "error",
                         "message": f"Mode of Payment '{mode_of_payment}' not found"
-                    }
+            }
 
         # --------------------------------------------------
         # WAREHOUSE – resolve from User Permission first, then request, then company defaults
@@ -2851,7 +2896,7 @@ def create_sales_invoice():
                         "mode_of_payment": mode_of_payment,
                         "amount": amount or 0,
                         "account": default_account
-                    })
+        })
 
         # Ensure every item and parent have a valid warehouse before set_missing_values.
         # ERPNext get_item_details -> update_bin_details -> get_bin_details(out.warehouse);
@@ -3312,7 +3357,7 @@ def update_sales_invoice():
                     "sales_person": sales_person,
                     "allocated_percentage": 100
                 })
-        
+
         # --------------------------------------------------
         # SAVE
         # --------------------------------------------------

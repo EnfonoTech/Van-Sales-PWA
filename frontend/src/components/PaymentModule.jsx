@@ -312,6 +312,7 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
             <div className="grid grid-2">
               <div className="form-group customer-search-container" style={{ position: 'relative' }}>
                 <label className="form-label">Customer *</label>
+                <div className="text-xs text-gray-500 mb-1">Payment collection: showing customers assigned to you</div>
                 <div style={{ position: 'relative' }}>
                   <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none' }} />
                   <input

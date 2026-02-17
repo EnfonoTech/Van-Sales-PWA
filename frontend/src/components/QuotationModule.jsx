@@ -1046,6 +1046,9 @@ function QuotationModule({ customers = [], items = [] }) {
           </div>
         )}
         <label className="form-label">Select {quotationTo} *</label>
+        <div className="text-xs text-gray-500 mb-1">
+          {quotationTo === 'Customer' ? 'Showing customers assigned to you' : 'Showing leads assigned to you'}
+        </div>
         <div style={{ position: 'relative' }}>
           <Search size={18} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none' }} />
           <input

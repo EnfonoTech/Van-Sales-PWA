@@ -290,7 +290,7 @@ function AppContent({ onLogout }) {
             await fetchCustomers();
             break;
           case 'returns':
-            await Promise.all([fetchSales(), fetchItems()]);
+            await Promise.all([fetchCustomers(), fetchSales(), fetchItems()]);
             break;
           case 'payments':
             await Promise.all([fetchCustomers(), fetchSales(), fetchPayments()]);

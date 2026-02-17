@@ -667,7 +667,8 @@ export const updateItem = async (itemData) => {
 };
 
 /**
- * Fetch customer list
+ * Fetch customer list (only customers assigned to current user: Sales Team, owner, or ToDo).
+ * Used by Sales, Quotations, Sales Orders, Returns, and Payment Collection.
  * @returns {Promise<Array>} Array of customers
  */
 export const getCustomers = async () => {
@@ -972,8 +973,11 @@ export const login = async (email, password) => {
     const endpoint = '/method/fateh_pwa.pwa.login';
     const url = `${API_BASE}${endpoint}`;
     const headers = { 'Content-Type': 'application/json' };
-    // Frappe requires CSRF token on POST when same-origin
-    if (API_BASE === '/api') {
+    // Frappe requires CSRF token on POST when same-origin. Always fetch a fresh token
+    // before login so it matches the session used for the POST (avoids CSRFTokenError).
+    const isSameOrigin = !API_BASE.startsWith('http') || (typeof window !== 'undefined' && API_BASE.startsWith(window.location.origin));
+    if (isSameOrigin) {
+      cachedCsrfToken = null;
       const csrf = await getCsrfToken();
       if (csrf) headers['X-Frappe-CSRF-Token'] = csrf;
     }

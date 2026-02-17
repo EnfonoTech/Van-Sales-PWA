@@ -593,6 +593,7 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
             <h3 className="mb-4">Customer Selection</h3>
             <div className="form-group customer-search-container" style={{ position: 'relative' }} ref={customerDropdownRef}>
               <label className="form-label">Select Customer *</label>
+              <div className="text-xs text-gray-500 mb-1">Showing customers assigned to you</div>
               <div style={{ position: 'relative' }}>
                 <div style={{ position: 'relative' }}>
                   <Search 
