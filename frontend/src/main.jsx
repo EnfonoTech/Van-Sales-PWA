@@ -34,12 +34,13 @@ if (import.meta.env.PROD) {
   }
 }
 
-import { HashRouter } from 'react-router-dom'
+import { BrowserRouter } from 'react-router-dom'
 
-// HashRouter so the PWA works when served from fateh_pwa app at /pwa or /assets/fateh_pwa/pwa/
-// Routes become #/dashboard, #/login, etc. (no server config needed for /pwa/dashboard)
+// BrowserRouter for clean URLs (pwa/quotations instead of #/quotations)
+// Basename matches the app's base path
+const basename = import.meta.env.VITE_APP_BASE_PATH || '/assets/fateh_pwa/pwa';
 createRoot(document.getElementById('root')).render(
-  <HashRouter>
+  <BrowserRouter basename={basename}>
     <App/>
-  </HashRouter>
+  </BrowserRouter>
 )

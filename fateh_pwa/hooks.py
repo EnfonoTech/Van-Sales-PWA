@@ -6,8 +6,10 @@ app_email = "ramees@enfono.com"
 app_license = "mit"
 
 # PWA entry: /pwa redirects to the built SPA
+# /pwa/login also redirects to the app (app routing will handle showing login page)
 website_redirects = [
     {"source": "/pwa", "target": "/assets/fateh_pwa/pwa/index.html"},
+    {"source": "/pwa/login", "target": "/assets/fateh_pwa/pwa/index.html"},
 ]
 
 # Apps

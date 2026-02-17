@@ -233,6 +233,32 @@ def get_user_company():
     return {"status": "success", "company": company} if company else {"status": "error", "message": "No company set for user"}
 
 
+@frappe.whitelist(allow_guest=False, methods=["GET"])
+def get_user_info():
+    """
+    Return current user information (name, email, full_name, user_image, company).
+    """
+    try:
+        user = frappe.session.user
+        if not user or user == "Guest":
+            return {"status": "error", "message": "Not authenticated"}
+        
+        user_doc = frappe.get_doc("User", user)
+        company = _get_user_company()
+        
+        return {
+            "status": "success",
+            "name": user_doc.name,
+            "full_name": user_doc.full_name or user_doc.name,
+            "email": user_doc.email or "",
+            "user_image": user_doc.user_image or "",
+            "company": company or "",
+        }
+    except Exception as e:
+        frappe.log_error("Get User Info Error", frappe.get_traceback())
+        return {"status": "error", "message": str(e)}
+
+
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def get_csrf_token():
     """
@@ -1088,6 +1114,29 @@ def _get_user_company():
     return company
 
 
+def _get_user_sales_person():
+    """
+    Get Sales Person for current user.
+    Resolves: User -> Employee (user_id) -> Sales Person (employee)
+    Returns Sales Person name or None if not found.
+    Note: Sales Person doctype doesn't have a direct 'user' field, only links via Employee.
+    """
+    user = frappe.session.user
+    if not user or user == "Guest":
+        return None
+    
+    # Sales Person is linked via Employee (employee field), not User.
+    # Resolve: User -> Employee (user_id) -> Sales Person (employee)
+    employee = frappe.db.get_value("Employee", {"user_id": user}, "name")
+    if employee:
+        sales_person = frappe.db.get_value("Sales Person", {"employee": employee}, "name")
+        if sales_person:
+            return sales_person
+    
+    # If no Sales Person found, return None (caller can handle)
+    return None
+
+
 def get_default_warehouse(company):
     """Get default warehouse for company"""
     warehouse = frappe.db.get_value(
@@ -1343,6 +1392,15 @@ def create_customer():
             "territory": data.get("territory", "Saudi Arabia"),
             "custom_vat_registration_number": data.get("custom_vat_registration_number")
         })
+        
+        # Add sales person to sales_team with 100% contribution
+        sales_person = _get_user_sales_person()
+        if sales_person:
+            customer_doc.append("sales_team", {
+                "sales_person": sales_person,
+                "allocated_percentage": 100
+            })
+        
         customer_doc.insert(ignore_permissions=True)
         frappe.db.commit()
         
@@ -2249,6 +2307,14 @@ def create_sales_order():
         for tax_row in tax_rows:
             doc.append("taxes", tax_row)
         
+        # Add sales person to sales_team with 100% contribution
+        sales_person = _get_user_sales_person()
+        if sales_person:
+            doc.append("sales_team", {
+                "sales_person": sales_person,
+                "allocated_percentage": 100
+            })
+        
         doc.set_missing_values()
         doc.run_method("set_taxes")
         doc.run_method("calculate_totals")
@@ -2484,6 +2550,16 @@ def update_sales_order():
             doc.transaction_date = data.get("transaction_date")
         if data.get("delivery_date"):
             doc.delivery_date = data.get("delivery_date")
+        
+        # Add sales person to sales_team if not already present
+        sales_person = _get_user_sales_person()
+        if sales_person:
+            existing_sales_persons = [st.sales_person for st in doc.sales_team]
+            if sales_person not in existing_sales_persons:
+                doc.append("sales_team", {
+                    "sales_person": sales_person,
+                    "allocated_percentage": 100
+                })
         
         doc.run_method("set_missing_values")
         doc.run_method("calculate_taxes_and_totals")
@@ -2826,6 +2902,16 @@ def create_sales_invoice():
         doc.set("set_warehouse", doc.get("set_warehouse") or warehouse_for_items)
         for item_row in doc.items:
             item_row.set("warehouse", warehouse_for_items)
+
+        # --------------------------------------------------
+        # ADD SALES PERSON TO SALES_TEAM WITH 100% CONTRIBUTION
+        # --------------------------------------------------
+        sales_person = _get_user_sales_person()
+        if sales_person:
+            doc.append("sales_team", {
+                "sales_person": sales_person,
+                "allocated_percentage": 100
+            })
 
         # --------------------------------------------------
         # DISCOUNT
@@ -3258,6 +3344,18 @@ def update_sales_invoice():
             doc.additional_discount_percentage = flt(data.get("discount_percentage"))
             doc.apply_discount_on = data.get("apply_discount_on", "Grand Total")
 
+        # --------------------------------------------------
+        # ADD SALES PERSON TO SALES_TEAM IF NOT ALREADY PRESENT
+        # --------------------------------------------------
+        sales_person = _get_user_sales_person()
+        if sales_person:
+            existing_sales_persons = [st.sales_person for st in doc.sales_team]
+            if sales_person not in existing_sales_persons:
+                doc.append("sales_team", {
+                    "sales_person": sales_person,
+                    "allocated_percentage": 100
+                })
+        
         # --------------------------------------------------
         # SAVE
         # --------------------------------------------------

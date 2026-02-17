@@ -5,6 +5,7 @@ import { Home, Users, ShoppingCart, FileText, Package, LogOut, Loader2, UserPlus
 import InstallPrompt from './components/InstallPrompt';
 import OfflineIndicator from './components/OfflineIndicator';
 import Login from './components/Login';
+import UserMenu from './components/UserMenu';
 import SARSymbol from './components/SARSymbol';
 import { assetUrl } from './utils/assetUrl';
 import { getCustomers, getSalesInvoiceList, createCustomer, createSalesInvoice, validateToken, logout, getStock, getPaymentEntriesList } from './services/api';
@@ -69,7 +70,7 @@ function AppContent({ onLogout }) {
             hasValidatedToken.current = false; // Reset on logout
             localStorage.removeItem('isAuthenticated');
             // Use window.location for hard redirect after clearing localStorage
-            window.location.href = '/login';
+            window.location.href = '/pwa/login';
           }
         }
       }
@@ -393,20 +394,7 @@ function AppContent({ onLogout }) {
                 </Link>
               ))}
             </div>
-            <button
-              className="nav-item-secondary"
-              onClick={handleLogout}
-              title="Logout"
-              style={{
-                marginLeft: '0.5rem',
-                padding: '0.5rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <LogOut size={20} />
-            </button>
+            <UserMenu onLogout={handleLogout} />
           </div>
         </div>
       </nav>
@@ -465,13 +453,8 @@ function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('isAuthenticated');
-    // When served from fateh_pwa app at /pwa, stay on same path and use hash for login
-    const basePath = import.meta.env.VITE_APP_BASE_PATH || '';
-    if (basePath) {
-      window.location.href = basePath + '#/login';
-    } else {
-      window.location.href = '/login';
-    }
+    // Redirect to /pwa/login which will load the app and show login page
+    window.location.href = '/pwa/login';
   };
 
   // Redirect to login if not authenticated and not on login page

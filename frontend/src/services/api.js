@@ -1119,6 +1119,32 @@ export const logout = async () => {
   }
 };
 
+/**
+ * Get current user information
+ * @returns {Promise<Object>} User info (name, email, full_name, user_image, company)
+ */
+export const getUserInfo = async () => {
+  try {
+    const response = await apiRequest('/method/fateh_pwa.pwa.get_user_info', {
+      method: 'GET',
+    });
+    const userData = response.message || response;
+    if (userData && userData.status === 'success') {
+      return {
+        name: userData.name,
+        full_name: userData.full_name,
+        email: userData.email,
+        user_image: userData.user_image,
+        company: userData.company,
+      };
+    }
+    throw new Error(userData?.message || 'Failed to fetch user info');
+  } catch (error) {
+    console.error('Error fetching user info:', error);
+    throw error;
+  }
+};
+
 // ============================================================================
 // PAYMENT ENTRY APIs
 // ============================================================================
@@ -2297,6 +2323,8 @@ export default {
   // Dashboard
   getTodaySales,
   getTodayCollection,
+  // User
+  getUserInfo,
   getTodayCashCollection,
   getTodayBankCollection,
   getDailyPosCollection,
