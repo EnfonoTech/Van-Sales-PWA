@@ -490,11 +490,23 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
   };
 
   const handleUpdatePrice = (code, value) => {
+    // Only sanitize while typing (allow digits and one decimal) - do NOT round so user can backspace and type freely
     const sanitized = sanitizeDecimalInput(value);
-    const rounded = sanitized === '' ? '' : (Math.round(parseFloat(sanitized) * 100) / 100).toFixed(2);
     setInvoiceItems(invoiceItems.map(item =>
-      item.code === code ? { ...item, price: rounded } : item
+      item.code === code ? { ...item, price: sanitized } : item
     ));
+  };
+
+  const handlePriceBlur = (code) => {
+    // Round to 2 decimals when user leaves the field
+    setInvoiceItems(invoiceItems.map(item => {
+      if (item.code !== code) return item;
+      const p = item.price;
+      if (p === '' || p == null) return { ...item, price: '' };
+      const num = parseFloat(String(p).replace(/[^0-9.-]/g, ''));
+      if (Number.isNaN(num)) return { ...item, price: '' };
+      return { ...item, price: (Math.round(num * 100) / 100).toFixed(2) };
+    }));
   };
 
   const handleUpdateQuantity = (code, value) => {
@@ -750,21 +762,56 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
 
       // Map items into create-form structure; price limited to 2 decimal places
       const to2 = (v) => (Math.round(Number(v) * 100) / 100).toFixed(2);
-      const itemsForForm = (details.items || []).map(item => {
-        const p = item.price ?? item.rate ?? 0;
+      
+      // Fetch item details for each item to get uom_conversions and price_list_rate
+      const customerName = details.customerName || details.customer || null;
+      const itemsForForm = await Promise.all((details.items || []).map(async (item) => {
+        const itemCode = item.code || item.item_code;
+        const currentPrice = item.price ?? item.rate ?? 0;
+        const currentUOM = item.uom || item.sales_uom || item.stock_uom || '';
+        
+        // Fetch item details to get uom_conversions and price_list_rate
+        let itemDetails = null;
+        try {
+          itemDetails = await getItemDetails(itemCode, customerName);
+        } catch (error) {
+          console.warn(`Failed to fetch details for item ${itemCode}:`, error);
+        }
+        
+        const stockUOM = itemDetails?.stock_uom || item.stock_uom || currentUOM;
+        const uomConversions = itemDetails?.uom_conversions || item.uom_conversions || [];
+        
+        // Get base price_list_rate from item details
+        let priceListRate = itemDetails?.item_prices?.[0]?.price_list_rate 
+          || itemDetails?.price_list_rate 
+          || item.price_list_rate;
+        
+        // If price_list_rate not found, reverse-convert current price to stock UOM
+        if (!priceListRate && currentUOM !== stockUOM && currentPrice) {
+          const currentConv = uomConversions.find(conv => conv.uom === currentUOM);
+          if (currentConv?.conversion_factor) {
+            priceListRate = currentPrice / currentConv.conversion_factor;
+          } else {
+            priceListRate = currentPrice; // Fallback if no conversion factor
+          }
+        } else if (!priceListRate) {
+          priceListRate = currentPrice; // Use current price as fallback
+        }
+        
         return {
-          code: item.code || item.item_code,
+          code: itemCode,
           name: item.name || item.item_name,
-          price: to2(p),
-          uom: item.uom || item.sales_uom || item.stock_uom || '',
-          stock_uom: item.stock_uom || item.uom || '',
-          sales_uom: item.sales_uom || item.uom || '',
-          uom_conversions: item.uom_conversions || [],
+          price: to2(currentPrice), // Keep current price as displayed
+          price_list_rate: Number(to2(priceListRate)), // Store base price_list_rate for UOM conversions
+          uom: currentUOM,
+          stock_uom: stockUOM,
+          sales_uom: itemDetails?.sales_uom || itemDetails?.stock_uom || item.sales_uom || item.stock_uom || stockUOM,
+          uom_conversions: uomConversions,
           stock: item.stock ?? 0,
           quantity: (item.quantity ?? item.qty ?? 1).toString(),
-          originalPrice: Number(to2(item.price_list_rate ?? item.price ?? item.rate ?? 0))
+          originalPrice: Number(to2(priceListRate)) // Store original price_list_rate
         };
-      });
+      }));
 
       // Set customer (SalesModule expects selectedCustomer as customer.id)
       const foundCustomer = customers.find(c => c.name === details.customerName || c.name === details.customer || c.id === details.customerId);
@@ -1578,6 +1625,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                                   className="form-input"
                                   value={item.price}
                                   onChange={(e) => handleUpdatePrice(item.code, e.target.value)}
+                                  onBlur={() => handlePriceBlur(item.code)}
                                   placeholder="0.00"
                                   style={{ width: '110px' }}
                                   required

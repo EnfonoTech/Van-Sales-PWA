@@ -40,6 +40,7 @@ export function TransactionFormLayout({
   onUpdatePrice,
   onUpdateQuantity,
   onUpdateUOM,
+  onPriceBlur,
   onRemoveItem,
   discountAmount,
   onDiscountChange,
@@ -111,6 +112,7 @@ export function TransactionFormLayout({
                             className="form-input"
                             value={item.price}
                             onChange={(e) => onUpdatePrice(item.code, e.target.value)}
+                            onBlur={() => onPriceBlur?.(item.code)}
                             placeholder="0.00"
                             style={{ width: '110px' }}
                           />

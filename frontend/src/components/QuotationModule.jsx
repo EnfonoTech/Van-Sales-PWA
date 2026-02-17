@@ -338,9 +338,19 @@ function QuotationModule({ customers = [], items = [] }) {
   };
 
   const handleUpdatePrice = (code, value) => {
+    // Only sanitize while typing - do NOT round so user can backspace and type freely
     const sanitized = sanitizeDecimalInput(value);
-    const rounded = sanitized === '' ? '' : to2(parseFloat(sanitized) || 0);
-    setLineItems((prev) => prev.map((i) => (i.code === code ? { ...i, price: rounded } : i)));
+    setLineItems((prev) => prev.map((i) => (i.code === code ? { ...i, price: sanitized } : i)));
+  };
+  const handlePriceBlur = (code) => {
+    setLineItems((prev) => prev.map((i) => {
+      if (i.code !== code) return i;
+      const p = i.price;
+      if (p === '' || p == null) return { ...i, price: '' };
+      const num = parseFloat(String(p).replace(/[^0-9.-]/g, ''));
+      if (Number.isNaN(num)) return { ...i, price: '' };
+      return { ...i, price: to2(num) };
+    }));
   };
   const handleUpdateQuantity = (code, value) => {
     setLineItems((prev) => prev.map((i) => (i.code === code ? { ...i, quantity: sanitizeIntegerInput(value) } : i)));
@@ -473,20 +483,55 @@ function QuotationModule({ customers = [], items = [] }) {
       const quotationDoc = details.quotation || details;
       
       // Map items into form structure; price to 2 decimal places
-      const itemsForForm = (quotationDoc.items || []).map(item => {
-        const p = item.rate ?? item.price ?? 0;
+      // Fetch item details for each item to get uom_conversions and price_list_rate
+      const partyName = quotationDoc.party_name || quotationDoc.customer_name || null;
+      const customerName = quotationDoc.quotation_to === 'Customer' ? partyName : null;
+      const itemsForForm = await Promise.all((quotationDoc.items || []).map(async (item) => {
+        const itemCode = item.item_code || item.code;
+        const currentPrice = item.rate ?? item.price ?? 0;
+        const currentUOM = item.uom || item.sales_uom || item.stock_uom || '';
+        
+        // Fetch item details to get uom_conversions and price_list_rate
+        let itemDetails = null;
+        try {
+          itemDetails = await getItemDetails(itemCode, customerName);
+        } catch (error) {
+          console.warn(`Failed to fetch details for item ${itemCode}:`, error);
+        }
+        
+        const stockUOM = itemDetails?.stock_uom || item.stock_uom || currentUOM;
+        const uomConversions = itemDetails?.uom_conversions || item.uom_conversions || [];
+        
+        // Get base price_list_rate from item details
+        let priceListRate = itemDetails?.item_prices?.[0]?.price_list_rate 
+          || itemDetails?.price_list_rate 
+          || item.price_list_rate;
+        
+        // If price_list_rate not found, reverse-convert current price to stock UOM
+        if (!priceListRate && currentUOM !== stockUOM && currentPrice) {
+          const currentConv = uomConversions.find(conv => conv.uom === currentUOM);
+          if (currentConv?.conversion_factor) {
+            priceListRate = currentPrice / currentConv.conversion_factor;
+          } else {
+            priceListRate = currentPrice; // Fallback if no conversion factor
+          }
+        } else if (!priceListRate) {
+          priceListRate = currentPrice; // Use current price as fallback
+        }
+        
         return {
-          code: item.item_code || item.code,
+          code: itemCode,
           name: item.item_name || item.name,
-          price: to2(p),
-          uom: item.uom || item.sales_uom || item.stock_uom || '',
-          stock_uom: item.stock_uom || '',
-          sales_uom: item.sales_uom || item.stock_uom || '',
-          uom_conversions: item.uom_conversions || [],
+          price: to2(currentPrice), // Keep current price as displayed
+          price_list_rate: Number(to2(priceListRate)), // Store base price_list_rate for UOM conversions
+          uom: currentUOM,
+          stock_uom: stockUOM,
+          sales_uom: itemDetails?.sales_uom || itemDetails?.stock_uom || item.sales_uom || item.stock_uom || stockUOM,
+          uom_conversions: uomConversions,
           quantity: (item.qty || item.quantity || 1).toString(),
-          originalPrice: Number(to2(item.price_list_rate ?? item.rate ?? item.price ?? 0))
+          originalPrice: Number(to2(priceListRate)) // Store original price_list_rate
         };
-      });
+      }));
       
       // Set party selection
       setQuotationTo(quotationDoc.quotation_to || 'Customer');
@@ -1143,6 +1188,7 @@ function QuotationModule({ customers = [], items = [] }) {
         onUpdatePrice={handleUpdatePrice}
         onUpdateQuantity={handleUpdateQuantity}
         onUpdateUOM={handleUpdateUOM}
+        onPriceBlur={handlePriceBlur}
         onRemoveItem={handleRemoveItem}
         discountAmount={discountAmount}
         onDiscountChange={handleUpdateDiscountAmount}
