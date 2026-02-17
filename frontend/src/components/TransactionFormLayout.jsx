@@ -6,6 +6,28 @@ import * as React from 'react';
 import { Save, Loader2, Trash2 } from 'lucide-react';
 import SARSymbol from './SARSymbol';
 
+// Get available UOMs for an item: stock_uom + UOMs with conversion_factor set
+// Only shows UOMs that have conversion rates set in item master (no hardcoded UOMs)
+const getAvailableUOMs = (item) => {
+  const stockUOM = item.stock_uom; // Only use if exists, no fallback
+  const uomConversions = item.uom_conversions || [];
+  const availableUOMs = [];
+  
+  // Include stock UOM if it exists
+  if (stockUOM) {
+    availableUOMs.push(stockUOM);
+  }
+  
+  // Add UOMs from conversions that have conversion_factor set
+  uomConversions.forEach(conv => {
+    if (conv.uom && conv.conversion_factor && !availableUOMs.includes(conv.uom)) {
+      availableUOMs.push(conv.uom);
+    }
+  });
+  
+  return availableUOMs;
+};
+
 export function TransactionFormLayout({
   title,
   backLabel = 'Back to List',
@@ -107,12 +129,13 @@ export function TransactionFormLayout({
                         <td>
                           <select
                             className="form-select"
-                            value={item.uom || item.stock_uom || 'Nos'}
+                            value={item.uom || item.stock_uom || (getAvailableUOMs(item)[0] || '')}
                             onChange={(e) => onUpdateUOM(item.code, e.target.value)}
                             style={{ width: '100px', padding: '6px 8px' }}
                           >
-                            <option value="Nos">Nos</option>
-                            <option value="Carton">Carton</option>
+                            {getAvailableUOMs(item).map(uom => (
+                              <option key={uom} value={uom}>{uom}</option>
+                            ))}
                           </select>
                         </td>
                         <td className="font-bold">

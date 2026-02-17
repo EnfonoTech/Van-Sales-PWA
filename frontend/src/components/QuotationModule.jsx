@@ -22,6 +22,28 @@ import TransactionDetailLayout from './TransactionDetailLayout';
 const sanitizeDecimalInput = (value = '') => value.replace(/[^0-9.]/g, '');
 const sanitizeIntegerInput = (value = '') => value.replace(/[^0-9]/g, '');
 
+// Get available UOMs for an item: stock_uom + UOMs with conversion_factor set
+// Only shows UOMs that have conversion rates set in item master (no hardcoded UOMs)
+const getAvailableUOMs = (item) => {
+  const stockUOM = item.stock_uom; // Only use if exists, no fallback
+  const uomConversions = item.uom_conversions || [];
+  const availableUOMs = [];
+  
+  // Include stock UOM if it exists
+  if (stockUOM) {
+    availableUOMs.push(stockUOM);
+  }
+  
+  // Add UOMs from conversions that have conversion_factor set
+  uomConversions.forEach(conv => {
+    if (conv.uom && conv.conversion_factor && !availableUOMs.includes(conv.uom)) {
+      availableUOMs.push(conv.uom);
+    }
+  });
+  
+  return availableUOMs;
+};
+
 function QuotationModule({ customers = [], items = [] }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -258,11 +280,13 @@ function QuotationModule({ customers = [], items = [] }) {
         let priceListRate = 0;
         if (itemDetails?.item_prices?.length) priceListRate = itemDetails.item_prices[0].price_list_rate || 0;
         else if (itemDetails?.price_list_rate) priceListRate = itemDetails.price_list_rate;
-        const defaultUOM = itemDetails?.sales_uom || itemDetails?.stock_uom || 'Nos';
+        const stockUOM = itemDetails?.stock_uom;
+        const salesUOM = itemDetails?.sales_uom;
+        const defaultUOM = salesUOM || stockUOM; // Use actual UOMs from API, no hardcoded fallback
         const uomConversions = itemDetails?.uom_conversions || [];
         let initialPrice = priceListRate;
-        if (defaultUOM === 'Carton') {
-          const conv = uomConversions.find((c) => c.uom === 'Carton');
+        if (defaultUOM && defaultUOM !== stockUOM) {
+          const conv = uomConversions.find((c) => c.uom === defaultUOM);
           if (conv?.conversion_factor) initialPrice = priceListRate * conv.conversion_factor;
         }
         const newItem = {
@@ -270,21 +294,23 @@ function QuotationModule({ customers = [], items = [] }) {
           name: itemDetails?.name || item.name,
           price: to2(initialPrice),
           price_list_rate: Number(to2(priceListRate)),
-          uom: defaultUOM,
-          stock_uom: itemDetails?.stock_uom || 'Nos',
-          sales_uom: itemDetails?.sales_uom || itemDetails?.stock_uom || 'Nos',
+          uom: defaultUOM || '',
+          stock_uom: stockUOM || '',
+          sales_uom: salesUOM || stockUOM || '',
           uom_conversions: uomConversions,
           quantity: '1',
           originalPrice: Number(to2(priceListRate)),
         };
         setLineItems((prev) => [...prev, newItem]);
       } catch {
-        const defaultUOM = item.sales_uom || item.stock_uom || 'Nos';
+        const stockUOM = item.stock_uom;
+        const salesUOM = item.sales_uom;
+        const defaultUOM = salesUOM || stockUOM; // Use actual UOMs from API, no hardcoded fallback
         const basePrice = item.price || 0;
         const uomConversions = item.uom_conversions || [];
         let initialPrice = basePrice;
-        if (defaultUOM === 'Carton') {
-          const conv = uomConversions.find((c) => c.uom === 'Carton');
+        if (defaultUOM && defaultUOM !== stockUOM) {
+          const conv = uomConversions.find((c) => c.uom === defaultUOM);
           if (conv?.conversion_factor) initialPrice = basePrice * conv.conversion_factor;
         }
         setLineItems((prev) => [
@@ -294,9 +320,9 @@ function QuotationModule({ customers = [], items = [] }) {
             name: item.name || item.item_name,
             price: to2(initialPrice),
             price_list_rate: Number(to2(basePrice)),
-            uom: defaultUOM,
-            stock_uom: item.stock_uom || 'Nos',
-            sales_uom: item.sales_uom || item.stock_uom || 'Nos',
+            uom: defaultUOM || '',
+            stock_uom: stockUOM || '',
+            sales_uom: salesUOM || stockUOM || '',
             uom_conversions: uomConversions,
             quantity: '1',
             originalPrice: Number(to2(basePrice)),
@@ -325,14 +351,49 @@ function QuotationModule({ customers = [], items = [] }) {
         if (i.code !== code) return i;
         const priceListRate = i.price_list_rate ?? parseFloat(i.originalPrice) ?? parseFloat(i.price) ?? 0;
         const currentPrice = parseFloat(i.price) || priceListRate;
-        const currentUOM = i.uom || 'Nos';
+        const currentUOM = i.uom || i.stock_uom || '';
+        const stockUOM = i.stock_uom || '';
         const uomConversions = i.uom_conversions || [];
-        const cartonConv = uomConversions.find((c) => c.uom === 'Carton');
-        const factor = cartonConv?.conversion_factor || 1;
-        let newPrice = priceListRate;
-        if (currentUOM === 'Nos' && value === 'Carton') newPrice = priceListRate * factor;
-        else if (currentUOM === 'Carton' && value === 'Nos') newPrice = currentPrice / factor;
-        else newPrice = currentPrice;
+        
+        let newPrice = priceListRate; // Default: base price per stock_uom
+        
+        // If already at target UOM, keep current price
+        if (currentUOM === value) {
+          newPrice = currentPrice;
+        } else {
+          // Find conversion factors
+          const currentConv = uomConversions.find(conv => conv.uom === currentUOM);
+          const targetConv = uomConversions.find(conv => conv.uom === value);
+          
+          // Convert via stock_uom (base UOM)
+          if (currentUOM === stockUOM) {
+            // Converting FROM stock_uom TO target UOM: multiply by conversion_factor
+            if (targetConv?.conversion_factor) {
+              newPrice = priceListRate * targetConv.conversion_factor;
+            } else {
+              newPrice = priceListRate; // No conversion factor, keep base price
+            }
+          } else if (value === stockUOM) {
+            // Converting FROM current UOM TO stock_uom: divide by conversion_factor
+            if (currentConv?.conversion_factor) {
+              newPrice = currentPrice / currentConv.conversion_factor;
+            } else {
+              newPrice = currentPrice; // No conversion factor, keep current price
+            }
+          } else {
+            // Converting BETWEEN two non-stock UOMs: convert via stock_uom
+            // First convert current price to stock_uom, then to target UOM
+            let stockPrice = currentPrice;
+            if (currentConv?.conversion_factor) {
+              stockPrice = currentPrice / currentConv.conversion_factor;
+            }
+            if (targetConv?.conversion_factor) {
+              newPrice = stockPrice * targetConv.conversion_factor;
+            } else {
+              newPrice = stockPrice;
+            }
+          }
+        }
         return { ...i, uom: value, price: to2(newPrice) };
       })
     );
@@ -418,9 +479,9 @@ function QuotationModule({ customers = [], items = [] }) {
           code: item.item_code || item.code,
           name: item.item_name || item.name,
           price: to2(p),
-          uom: item.uom || item.sales_uom || item.stock_uom || 'Nos',
-          stock_uom: item.stock_uom || 'Nos',
-          sales_uom: item.sales_uom || item.stock_uom || 'Nos',
+          uom: item.uom || item.sales_uom || item.stock_uom || '',
+          stock_uom: item.stock_uom || '',
+          sales_uom: item.sales_uom || item.stock_uom || '',
           uom_conversions: item.uom_conversions || [],
           quantity: (item.qty || item.quantity || 1).toString(),
           originalPrice: Number(to2(item.price_list_rate ?? item.rate ?? item.price ?? 0))
@@ -595,7 +656,7 @@ function QuotationModule({ customers = [], items = [] }) {
         item_name: i.name || i.item_name || '',
         qty: getQuantityValue(i.quantity),
         rate: round2(getPriceValue(i.price)),
-        uom: i.uom || i.stock_uom || 'Nos',
+        uom: i.uom || i.stock_uom || '',
       }));
       
       let result;

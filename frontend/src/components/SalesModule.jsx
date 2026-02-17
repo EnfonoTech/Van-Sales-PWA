@@ -47,6 +47,29 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
   const [successDialog, setSuccessDialog] = useState({ isOpen: false, title: '', message: '' });
   const sanitizeDecimalInput = (value = '') => value.replace(/[^0-9.]/g, '');
   const sanitizeIntegerInput = (value = '') => value.replace(/[^0-9]/g, '');
+  
+  // Get available UOMs for an item: stock_uom + UOMs with conversion_factor set
+  // Only shows UOMs that have conversion rates set in item master (no hardcoded UOMs)
+  const getAvailableUOMs = (item) => {
+    const stockUOM = item.stock_uom; // Only use if exists, no fallback
+    const uomConversions = item.uom_conversions || [];
+    const availableUOMs = [];
+    
+    // Include stock UOM if it exists
+    if (stockUOM) {
+      availableUOMs.push(stockUOM);
+    }
+    
+    // Add UOMs from conversions that have conversion_factor set
+    uomConversions.forEach(conv => {
+      if (conv.uom && conv.conversion_factor && !availableUOMs.includes(conv.uom)) {
+        availableUOMs.push(conv.uom);
+      }
+    });
+    
+    return availableUOMs;
+  };
+  
   const cleanErrorMessage = (error) => {
     const stripHtml = (s) => (typeof s === 'string' ? s.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() : '');
     const stripStatusPrefix = (s) => {
@@ -394,16 +417,18 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         const baseQuantity = item.quantity ?? 1;
         const actualQty = itemDetails?.actual_qty ?? item.stock ?? 0;
         
-        // Default UOM is sales_uom from API
-        const defaultUOM = itemDetails?.sales_uom || itemDetails?.stock_uom || 'Nos';
+        // Default UOM is sales_uom from API (only if exists, no hardcoded fallback)
+        const stockUOM = itemDetails?.stock_uom;
+        const salesUOM = itemDetails?.sales_uom;
+        const defaultUOM = salesUOM || stockUOM; // Use actual UOMs from API, no fallback
         const uomConversions = itemDetails?.uom_conversions || [];
         
-        // Price is per Nos (stock_uom), so convert if default UOM is Carton
+        // Price is per stock_uom, so convert if default UOM is different and stockUOM exists
         let initialPrice = priceListRate;
-        if (defaultUOM === 'Carton') {
-          const cartonConversion = uomConversions.find(conv => conv.uom === 'Carton');
-          if (cartonConversion && cartonConversion.conversion_factor) {
-            initialPrice = priceListRate * cartonConversion.conversion_factor;
+        if (defaultUOM && stockUOM && defaultUOM !== stockUOM) {
+          const defaultConversion = uomConversions.find(conv => conv.uom === defaultUOM);
+          if (defaultConversion && defaultConversion.conversion_factor) {
+            initialPrice = priceListRate * defaultConversion.conversion_factor;
           }
         }
         const roundPrice = (v) => (Math.round(Number(v) * 100) / 100).toFixed(2);
@@ -411,10 +436,10 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
           code: itemDetails?.code || item.code,
           name: itemDetails?.name || item.name,
           price: roundPrice(initialPrice), // 2 decimal places
-          price_list_rate: Number(roundPrice(priceListRate)), // Store original (per Nos/stock_uom)
-          uom: defaultUOM, // Default to sales_uom
-          stock_uom: itemDetails?.stock_uom || 'Nos', // Store original stock_uom from API
-          sales_uom: itemDetails?.sales_uom || itemDetails?.stock_uom || 'Nos', // Store original sales_uom from API
+          price_list_rate: Number(roundPrice(priceListRate)), // Store original (per stock_uom)
+          uom: defaultUOM || stockUOM || '', // Use actual UOMs from API, no hardcoded fallback
+          stock_uom: stockUOM || '', // Store original stock_uom from API (no fallback)
+          sales_uom: salesUOM || stockUOM || '', // Store original sales_uom from API (no fallback)
           uom_conversions: uomConversions, // Store conversion factors
           stock: actualQty,
           quantity: baseQuantity.toString(),
@@ -424,17 +449,19 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
       } catch (error) {
         console.error('Error fetching item details:', error);
         // If API fails, use item data directly
-        // Default UOM is sales_uom
-        const defaultUOM = item.sales_uom || item.stock_uom || 'Nos';
+        // Default UOM is sales_uom (only if exists, no hardcoded fallback)
+        const stockUOM = item.stock_uom;
+        const salesUOM = item.sales_uom;
+        const defaultUOM = salesUOM || stockUOM; // Use actual UOMs from API, no fallback
         const basePrice = item.price || 0;
         const uomConversions = item.uom_conversions || [];
         
-        // Convert price if default UOM is Carton
+        // Convert price if default UOM has conversion factor
         let initialPrice = basePrice;
-        if (defaultUOM === 'Carton') {
-          const cartonConversion = uomConversions.find(conv => conv.uom === 'Carton');
-          if (cartonConversion && cartonConversion.conversion_factor) {
-            initialPrice = basePrice * cartonConversion.conversion_factor;
+        if (defaultUOM && defaultUOM !== stockUOM) {
+          const defaultConversion = uomConversions.find(conv => conv.uom === defaultUOM);
+          if (defaultConversion && defaultConversion.conversion_factor) {
+            initialPrice = basePrice * defaultConversion.conversion_factor;
           }
         }
         const roundPriceFallback = (v) => (Math.round(Number(v) * 100) / 100).toFixed(2);
@@ -443,9 +470,9 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
           name: item.name,
           price: roundPriceFallback(initialPrice), // 2 decimal places
           price_list_rate: Number(roundPriceFallback(basePrice)),
-          uom: defaultUOM, // Default to sales_uom
-          stock_uom: item.stock_uom || 'Nos',
-          sales_uom: item.sales_uom || item.stock_uom || 'Nos',
+          uom: defaultUOM || '', // Use actual UOMs from API, no hardcoded fallback
+          stock_uom: stockUOM || '', // Store actual stock_uom (no fallback)
+          sales_uom: salesUOM || stockUOM || '', // Store actual sales_uom (no fallback)
           uom_conversions: uomConversions,
           stock: item.stock || 0,
           quantity: (item.quantity || 1).toString(),
@@ -482,25 +509,48 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
       if (item.code === code) {
         const priceListRate = item.price_list_rate || parseFloat(item.originalPrice) || parseFloat(item.price) || 0;
         const currentPrice = parseFloat(item.price) || priceListRate;
-        const currentUOM = item.uom || item.stock_uom || 'Nos';
+        const currentUOM = item.uom || item.stock_uom || '';
+        const stockUOM = item.stock_uom || '';
         const uomConversions = item.uom_conversions || [];
         
-        let newPrice = priceListRate; // Default: base price per Nos (stock_uom)
+        let newPrice = priceListRate; // Default: base price per stock_uom
         
-        // Find Carton conversion factor
-        const cartonConversion = uomConversions.find(conv => conv.uom === 'Carton');
-        const cartonFactor = cartonConversion?.conversion_factor || 1;
-        
-        // Convert FROM current UOM TO target UOM
-        if (currentUOM === 'Nos' && value === 'Carton') {
-          // Converting FROM Nos TO Carton: multiply base price by Carton's conversion_factor
-          newPrice = priceListRate * cartonFactor;
-        } else if (currentUOM === 'Carton' && value === 'Nos') {
-          // Converting FROM Carton TO Nos: divide current Carton price by Carton's conversion_factor
-          newPrice = currentPrice / cartonFactor;
-        } else {
-          // If already at target UOM or unknown conversion, keep current price
+        // If already at target UOM, keep current price
+        if (currentUOM === value) {
           newPrice = currentPrice;
+        } else {
+          // Find conversion factors
+          const currentConv = uomConversions.find(conv => conv.uom === currentUOM);
+          const targetConv = uomConversions.find(conv => conv.uom === value);
+          
+          // Convert via stock_uom (base UOM)
+          if (currentUOM === stockUOM) {
+            // Converting FROM stock_uom TO target UOM: multiply by conversion_factor
+            if (targetConv?.conversion_factor) {
+              newPrice = priceListRate * targetConv.conversion_factor;
+            } else {
+              newPrice = priceListRate; // No conversion factor, keep base price
+            }
+          } else if (value === stockUOM) {
+            // Converting FROM current UOM TO stock_uom: divide by conversion_factor
+            if (currentConv?.conversion_factor) {
+              newPrice = currentPrice / currentConv.conversion_factor;
+            } else {
+              newPrice = currentPrice; // No conversion factor, keep current price
+            }
+          } else {
+            // Converting BETWEEN two non-stock UOMs: convert via stock_uom
+            // First convert current price to stock_uom, then to target UOM
+            let stockPrice = currentPrice;
+            if (currentConv?.conversion_factor) {
+              stockPrice = currentPrice / currentConv.conversion_factor;
+            }
+            if (targetConv?.conversion_factor) {
+              newPrice = stockPrice * targetConv.conversion_factor;
+            } else {
+              newPrice = stockPrice;
+            }
+          }
         }
         const rounded = (Math.round(Number(newPrice) * 100) / 100).toFixed(2);
         return { ...item, uom: value, price: rounded };
@@ -706,9 +756,9 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
           code: item.code || item.item_code,
           name: item.name || item.item_name,
           price: to2(p),
-          uom: item.uom || item.sales_uom || item.stock_uom || 'Nos',
-          stock_uom: item.stock_uom || item.uom || 'Nos',
-          sales_uom: item.sales_uom || item.uom || 'Nos',
+          uom: item.uom || item.sales_uom || item.stock_uom || '',
+          stock_uom: item.stock_uom || item.uom || '',
+          sales_uom: item.sales_uom || item.uom || '',
           uom_conversions: item.uom_conversions || [],
           stock: item.stock ?? 0,
           quantity: (item.quantity ?? item.qty ?? 1).toString(),
@@ -930,7 +980,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
     const formattedItems = invoiceItems.map(item => {
       const price = round2(getPriceValue(item.price));
       const quantity = getQuantityValue(item.quantity);
-      const selectedUOM = item.uom || item.stock_uom || 'Nos';
+      const selectedUOM = item.uom || item.stock_uom || '';
       return {
         code: item.code,
         name: item.name,
@@ -1547,12 +1597,13 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                               <td>
                                 <select
                                   className="form-select"
-                                  value={item.uom || item.stock_uom || 'Nos'}
+                                  value={item.uom || item.stock_uom || (getAvailableUOMs(item)[0] || '')}
                                   onChange={(e) => handleUpdateUOM(item.code, e.target.value)}
                                   style={{ width: '100px', padding: '6px 8px' }}
                                 >
-                                  <option value="Nos">Nos</option>
-                                  <option value="Carton">Carton</option>
+                                  {getAvailableUOMs(item).map(uom => (
+                                    <option key={uom} value={uom}>{uom}</option>
+                                  ))}
                                 </select>
                               </td>
                               <td className="font-bold"><SARSymbol size={16} /> {itemTotal.toFixed(2)}</td>
@@ -1794,7 +1845,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                           <td className="font-semibold">{item.code || item.item_code}</td>
                           <td>{item.name || item.item_name}</td>
                           <td>{item.quantity || item.qty || 1}</td>
-                          <td>{item.uom || 'Nos'}</td>
+                          <td>{item.uom || '-'}</td>
                           <td><SARSymbol size={16} /> {(item.price || item.rate || 0).toFixed(2)}</td>
                           <td><SARSymbol size={16} /> {(item.discount || 0).toFixed(2)}</td>
                           <td className="font-semibold"><SARSymbol size={16} /> {itemTotal.toFixed(2)}</td>
