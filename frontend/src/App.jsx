@@ -411,6 +411,7 @@ function AppContent({ onLogout }) {
             <Route path="/leads" element={<LeadModule />} />
             <Route path="/quotations" element={<QuotationModule customers={customers} items={items} />} />
             <Route path="/sales-orders" element={<SalesOrderModule customers={customers} items={items} />} />
+            <Route path="/index.html" element={<Navigate to="/dashboard" replace />} />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </Suspense>
@@ -468,6 +469,7 @@ function App() {
     return (
       <Routes>
         <Route path="/login" element={<Login onLogin={handleLogin} />} />
+        <Route path="/index.html" element={<Navigate to="/login" replace />} />
         <Route path="/*" element={<Navigate to="/login" replace />} />
       </Routes>
     );

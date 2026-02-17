@@ -331,52 +331,9 @@ def get_items_list():
             limit_start=offset
         )
 
-        # -------------------------------
-        # RATE RESOLUTION (Nos / Carton)
-        # -------------------------------
-        for item in items:
-            rates = {
-                "Nos": 0,
-                "Carton": 0
-            }
-
-            for uom in ["Nos", "Carton"]:
-                rate = None
-
-                # 1️⃣ Last rate for this customer
-                if customer:
-                    rate = frappe.db.sql("""
-                        SELECT sii.rate
-                        FROM `tabSales Invoice Item` sii
-                        INNER JOIN `tabSales Invoice` si
-                            ON si.name = sii.parent
-                        WHERE
-                            si.customer = %s
-                            AND sii.item_code = %s
-                            AND sii.uom = %s
-                            AND si.docstatus = 1
-                        ORDER BY si.posting_date DESC, si.creation DESC
-                        LIMIT 1
-                    """, (customer, item["item_code"], uom))
-
-                    rate = rate[0][0] if rate else None
-
-                # 2️⃣ Fallback: Standard Selling Price List
-                if rate is None:
-                    rate = frappe.db.get_value(
-                        "Item Price",
-                        {
-                            "item_code": item["item_code"],
-                            "uom": uom,
-                            "selling": 1
-                        },
-                        "price_list_rate"
-                    )
-
-                rates[uom] = flt(rate or 0, 2)
-
-            # attach rates without breaking structure
-            item["rates"] = rates
+        # Note: Item prices are resolved per-UOM when adding to a transaction via get_item_details
+        # (price list + optional customer). No per-UOM rates attached here; frontend uses
+        # standard_rate/valuation_rate for list display only.
 
         total_count = frappe.db.count("Item", filters=filters)
 
