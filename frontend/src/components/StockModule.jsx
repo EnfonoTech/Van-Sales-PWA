@@ -15,10 +15,9 @@ function StockModule({ items, loadingItems }) {
     return matchesSearch;
   });
 
-  // Calculate totals
+  // Calculate totals (from API data only)
   const totalItems = filteredItems.length;
   const totalQuantity = filteredItems.reduce((sum, item) => sum + (item.stock || 0), 0);
-  const totalValue = filteredItems.reduce((sum, item) => sum + (item.stock_value || 0), 0);
 
   return (
     <div className="stock-module fade-in">
@@ -77,26 +76,23 @@ function StockModule({ items, loadingItems }) {
                   <th>UOM</th>
                   <th>Warehouse</th>
                   <th>Stock Qty</th>
-                  <th>Stock Value</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredItems.map(item => {
-                  const stockQty = item.stock || 0;
-                  const stockValue = item.stock_value || 0;
+                  const stockQty = item.stock ?? 0;
                   const isOutOfStock = stockQty === 0;
 
                   return (
                     <tr key={item.code}>
                       <td className="font-semibold">{item.code}</td>
                       <td>{item.name}</td>
-                      <td>{item.uom || 'Nos'}</td>
+                      <td>{item.uom || '—'}</td>
                       <td>
                         <span className="badge badge-gray">{item.warehouse || '—'}</span>
                       </td>
                       <td className="font-semibold">{stockQty}</td>
-                      <td className="font-semibold">{stockValue}</td>
                       <td>
                         {isOutOfStock ? (
                           <span className="badge badge-danger">Out of Stock</span>
@@ -112,9 +108,6 @@ function StockModule({ items, loadingItems }) {
                 <tr style={{ borderTop: '2px solid var(--primary)', background: 'var(--gray-50)' }}>
                   <td colSpan="4" className="font-bold">TOTALS:</td>
                   <td className="font-bold">{totalQuantity}</td>
-                  <td className="font-bold" style={{ color: 'var(--primary)' }}>
-                    {totalValue}
-                  </td>
                   <td></td>
                 </tr>
               </tfoot>

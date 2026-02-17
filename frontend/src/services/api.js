@@ -1327,14 +1327,13 @@ export const getStockBalance = async (filters = {}) => {
       stockItems = response.items;
     }
     
-    // Transform API response to stock format expected by StockModule
+    // Transform API response to stock format expected by StockModule (no stock_value – backend Bin does not provide it; use get_stock_levels if valuation needed)
     const transformedItems = stockItems.map(item => ({
       code: item.item_code || item.code || '',
       name: item.item_name || item.name || '',
-      uom: item.stock_uom || item.uom || 'Nos',
+      uom: item.stock_uom || item.uom || '',
       stock: parseFloat(item.actual_qty || item.qty || item.stock_qty || item.stock || 0),
-      warehouse: warehouse, // Use warehouse from API response
-      stock_value: parseFloat(item.actual_qty || item.qty || item.stock_qty || item.stock || 0), // Use actual_qty for stock_value
+      warehouse: warehouse,
       description: item.description || '',
       item_group: item.item_group || '',
       is_stock_item: item.is_stock_item !== undefined ? item.is_stock_item : true
@@ -1362,10 +1361,9 @@ export const getStock = async (warehouse = null) => {
     return stockItems.map(item => ({
       code: item.item_code || item.code || '',
       name: item.item_name || item.name || '',
-      uom: item.stock_uom || item.uom || 'Nos',
+      uom: item.stock_uom || item.uom || '',
       stock: parseFloat(item.actual_qty || item.qty || item.stock_qty || item.stock || 0),
-      warehouse: warehouse || item.warehouse || 'Main',
-      stock_value: parseFloat(item.actual_qty || item.qty || item.stock_qty || item.stock || 0),
+      warehouse: warehouse || item.warehouse || '',
       description: item.description || '',
       item_group: item.item_group || '',
       is_stock_item: item.is_stock_item !== undefined ? item.is_stock_item : true
