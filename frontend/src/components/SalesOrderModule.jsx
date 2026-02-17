@@ -154,12 +154,12 @@ function SalesOrderModule({ customers = [], items = [] }) {
           (c.email || '').toLowerCase().includes(customerSearch.toLowerCase())
       );
       setFilteredCustomers(filtered);
-      setShowCustomerResults(true);
+      if (!selectedCustomer) setShowCustomerResults(true);
     } else {
       setFilteredCustomers([]);
-      setShowCustomerResults(false);
+      if (!selectedCustomer) setShowCustomerResults(false);
     }
-  }, [customerSearch, customers]);
+  }, [customerSearch, customers, selectedCustomer]);
 
   useEffect(() => {
     if (!selectedCustomer) {
@@ -823,12 +823,12 @@ function SalesOrderModule({ customers = [], items = [] }) {
               setCustomerSearch(e.target.value);
               if (selectedCustomer) setSelectedCustomer('');
             }}
-            onFocus={() => (customerSearch || customers.length) && setShowCustomerResults(true)}
+            onFocus={() => !selectedCustomer && (customerSearch || customers.length) && setShowCustomerResults(true)}
             style={{ paddingLeft: 40 }}
             autoComplete="off"
           />
         </div>
-        {showCustomerResults && (customerSearch || filteredCustomers.length || customers.length) && (
+        {showCustomerResults && !selectedCustomer && (customerSearch || filteredCustomers.length || customers.length) && (
           <div
             className="card"
             style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, maxHeight: 300, overflowY: 'auto', zIndex: 1000, boxShadow: 'var(--shadow-lg)', padding: 0 }}

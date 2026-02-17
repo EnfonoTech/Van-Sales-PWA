@@ -210,9 +210,9 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
     }).catch(() => setPaymentMethods([]));
   }, []);
 
-  // Filter customers based on search query
+  // Filter customers based on search query (only show dropdown when no customer selected)
   useEffect(() => {
-    if (customerSearch.trim()) {
+    if (customerSearch.trim() && !selectedCustomer) {
       const filtered = customers.filter(customer =>
         customer.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
         customer.custom_customer_name_english?.toLowerCase().includes(customerSearch.toLowerCase()) ||
@@ -221,11 +221,11 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
       );
       setFilteredCustomers(filtered);
       setShowCustomerResults(true);
-    } else {
+    } else if (!customerSearch.trim()) {
       setFilteredCustomers([]);
-      setShowCustomerResults(false);
+      if (!selectedCustomer) setShowCustomerResults(false);
     }
-  }, [customerSearch, customers]);
+  }, [customerSearch, customers, selectedCustomer]);
 
   // When user searches invoices, fetch from server (so any invoice can be found, not just the first 20)
   useEffect(() => {
@@ -1363,7 +1363,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                       }
                     }}
                     onFocus={() => {
-                      if (customerSearch || customers.length > 0) {
+                      if (!selectedCustomer && (customerSearch || customers.length > 0)) {
                         setShowCustomerResults(true);
                       }
                     }}
@@ -1373,7 +1373,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                   />
                 </div>
                 
-                {showCustomerResults && (customerSearch || filteredCustomers.length > 0 || customers.length > 0) && (
+                {showCustomerResults && !selectedCustomer && (customerSearch || filteredCustomers.length > 0 || customers.length > 0) && (
                   <div 
                     className="card" 
                     style={{

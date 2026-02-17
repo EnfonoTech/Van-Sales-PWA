@@ -174,7 +174,7 @@ function QuotationModule({ customers = [], items = [] }) {
 
   useEffect(() => {
     if (quotationTo === 'Customer') {
-      if (partySearch.trim()) {
+      if (partySearch.trim() && !selectedCustomer) {
         const filtered = (customers || []).filter(
           (c) =>
             (c.name || '').toLowerCase().includes(partySearch.toLowerCase()) ||
@@ -184,12 +184,12 @@ function QuotationModule({ customers = [], items = [] }) {
         );
         setFilteredCustomers(filtered);
         setShowPartyResults(true);
-      } else {
+      } else if (!partySearch.trim()) {
         setFilteredCustomers([]);
-        setShowPartyResults(false);
+        if (!selectedCustomer) setShowPartyResults(false);
       }
     } else {
-      if (partySearch.trim()) {
+      if (partySearch.trim() && !selectedLeadName) {
         const filtered = leads.filter(
           (l) =>
             (l.lead_name || l.name || '').toLowerCase().includes(partySearch.toLowerCase()) ||
@@ -199,12 +199,12 @@ function QuotationModule({ customers = [], items = [] }) {
         );
         setFilteredLeads(filtered);
         setShowPartyResults(true);
-      } else {
+      } else if (!partySearch.trim()) {
         setFilteredLeads([]);
-        setShowPartyResults(false);
+        if (!selectedLeadName) setShowPartyResults(false);
       }
     }
-  }, [partySearch, customers, leads, quotationTo]);
+  }, [partySearch, customers, leads, quotationTo, selectedCustomer, selectedLeadName]);
 
   useEffect(() => {
     if (!hasParty) {
@@ -1058,12 +1058,12 @@ function QuotationModule({ customers = [], items = [] }) {
               if (quotationTo === 'Customer') setSelectedCustomer('');
               else setSelectedLeadName('');
             }}
-            onFocus={() => setShowPartyResults(true)}
+            onFocus={() => !hasParty && setShowPartyResults(true)}
             style={{ paddingLeft: 40 }}
             autoComplete="off"
           />
         </div>
-        {showPartyResults && (partySearch || (quotationTo === 'Customer' ? filteredCustomers.length : filteredLeads.length) || (quotationTo === 'Customer' ? customers.length : leads.length)) && (
+        {showPartyResults && !hasParty && (partySearch || (quotationTo === 'Customer' ? filteredCustomers.length : filteredLeads.length) || (quotationTo === 'Customer' ? customers.length : leads.length)) && (
           <div
             className="card"
             style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, maxHeight: 300, overflowY: 'auto', zIndex: 1000, boxShadow: 'var(--shadow-lg)', padding: 0 }}
