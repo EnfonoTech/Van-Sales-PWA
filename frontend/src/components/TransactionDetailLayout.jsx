@@ -129,7 +129,7 @@ export function TransactionDetailLayout({
                   <th>Qty</th>
                   <th>UOM</th>
                   <th>Rate</th>
-                  <th>Discount</th>
+                  <th style={{ display: 'none' }}>Discount</th>
                   <th>Amount</th>
                 </tr>
               </thead>
@@ -146,7 +146,7 @@ export function TransactionDetailLayout({
                       <td>{qty}</td>
                       <td>{item.uom || 'Nos'}</td>
                       <td><SARSymbol size={16} /> {Number(rate).toFixed(2)}</td>
-                      <td><SARSymbol size={16} /> {Number(disc).toFixed(2)}</td>
+                      <td style={{ display: 'none' }}><SARSymbol size={16} /> {Number(disc).toFixed(2)}</td>
                       <td className="font-semibold"><SARSymbol size={16} /> {itemTotal.toFixed(2)}</td>
                     </tr>
                   );
@@ -160,7 +160,7 @@ export function TransactionDetailLayout({
                   </td>
                 </tr>
                 {(discount ?? 0) > 0 && (
-                  <tr>
+                  <tr style={{ display: 'none' }}>
                     <td colSpan="5" className="text-right">Discount:</td>
                     <td colSpan="2"><SARSymbol size={16} /> {Number(discount).toFixed(2)}</td>
                   </tr>

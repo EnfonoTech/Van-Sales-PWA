@@ -1675,7 +1675,7 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                           <td colSpan="5" className="text-right font-bold">Subtotal:</td>
                           <td colSpan="2" className="font-bold"><SARSymbol size={16} /> {calculateSubtotal().toFixed(2)}</td>
                         </tr>
-                        <tr>
+                        <tr style={{ display: 'none' }}>
                           <td colSpan="5" className="text-right font-bold">Discount:</td>
                           <td colSpan="2" style={{ padding: '8px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-start' }}>
@@ -1877,7 +1877,7 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                       <th>Qty</th>
                       <th>UOM</th>
                       <th>Rate</th>
-                      <th>Discount</th>
+                      <th style={{ display: 'none' }}>Discount</th>
                       <th>Amount</th>
                     </tr>
                   </thead>
@@ -1891,7 +1891,7 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                           <td>{item.quantity || item.qty || 1}</td>
                           <td>{item.uom || '-'}</td>
                           <td><SARSymbol size={16} /> {(item.price || item.rate || 0).toFixed(2)}</td>
-                          <td><SARSymbol size={16} /> {(item.discount || 0).toFixed(2)}</td>
+                          <td style={{ display: 'none' }}><SARSymbol size={16} /> {(item.discount || 0).toFixed(2)}</td>
                           <td className="font-semibold"><SARSymbol size={16} /> {itemTotal.toFixed(2)}</td>
                         </tr>
                       );
@@ -1905,7 +1905,7 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                       </td>
                     </tr>
                     {invoice.discount > 0 && (
-                      <tr>
+                      <tr style={{ display: 'none' }}>
                         <td colSpan="5" className="text-right">Discount:</td>
                         <td colSpan="2"><SARSymbol size={16} /> {(invoice.discount || 0).toFixed(2)}</td>
                       </tr>

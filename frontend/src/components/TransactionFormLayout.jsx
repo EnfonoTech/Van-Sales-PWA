@@ -163,7 +163,7 @@ export function TransactionFormLayout({
                       <SARSymbol size={16} /> {((typeof calculateSubtotal === 'function' ? calculateSubtotal() : 0)).toFixed(2)}
                     </td>
                   </tr>
-                  <tr>
+                  <tr style={{ display: 'none' }}>
                     <td colSpan="5" className="text-right font-bold">Discount:</td>
                     <td colSpan="2" style={{ padding: '8px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
