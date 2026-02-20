@@ -2219,6 +2219,8 @@ def create_quotation():
             doc.transaction_date = data["transaction_date"]
         if data.get("valid_till"):
             doc.valid_till = data["valid_till"]
+        if data.get("custom_pr_ref") is not None:
+            doc.custom_pr_ref = (data.get("custom_pr_ref") or "").strip() or None
         for row in items:
             doc.append("items", {
                 "item_code": row.get("item_code"),
@@ -2627,6 +2629,8 @@ def update_quotation():
             doc.transaction_date = data.get("transaction_date")
         if data.get("valid_till"):
             doc.valid_till = data.get("valid_till")
+        if "custom_pr_ref" in data:
+            doc.custom_pr_ref = (data.get("custom_pr_ref") or "").strip() or None
         
         doc.run_method("set_taxes")
         doc.run_method("calculate_totals")

@@ -74,6 +74,7 @@ function QuotationModule({ customers = [], items = [] }) {
   const [loadingItem, setLoadingItem] = useState(false);
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [discountAmount, setDiscountAmount] = useState('0');
+  const [prRef, setPrRef] = useState('');
   const itemDropdownRef = useRef(null);
 
   const [selectedQuotation, setSelectedQuotation] = useState(null);
@@ -567,6 +568,7 @@ function QuotationModule({ customers = [], items = [] }) {
       
       setLineItems(itemsForForm);
       setDiscountAmount((quotationDoc.discount_amount || 0).toString());
+      setPrRef(quotationDoc.custom_pr_ref || '');
       
       setEditingQuotation(doc.name);
       setView('create');
@@ -717,6 +719,7 @@ function QuotationModule({ customers = [], items = [] }) {
       }
       setLineItems(itemsForForm);
       setDiscountAmount((quotationDoc.discount_amount || 0).toString());
+      setPrRef(quotationDoc.custom_pr_ref || '');
       setEditingQuotation(newName);
       setView('create');
     } catch (err) {
@@ -876,6 +879,7 @@ function QuotationModule({ customers = [], items = [] }) {
           party_name: partyNameForApi,
           items: formattedItems,
           discount_amount: getDiscountValue(discountAmount),
+          custom_pr_ref: prRef || undefined,
         });
         quotationName = editingQuotation;
       } else {
@@ -884,6 +888,7 @@ function QuotationModule({ customers = [], items = [] }) {
           quotation_to: quotationTo,
           party_name: partyNameForApi,
           items: formattedItems,
+          custom_pr_ref: prRef || undefined,
         });
         quotationName = result.name || result.message?.name;
       }
@@ -906,6 +911,7 @@ function QuotationModule({ customers = [], items = [] }) {
       setPartySearch('');
       setLineItems([]);
       setDiscountAmount('0');
+      setPrRef('');
       setEditingQuotation(null);
     } catch (err) {
       console.error('Error creating/updating quotation:', err);
@@ -1095,6 +1101,7 @@ function QuotationModule({ customers = [], items = [] }) {
         onBack={() => setView('list')}
         partyLabel="Party Information"
         partyName={doc?.customer_name || doc?.party_name}
+        partySubtitle={doc?.custom_pr_ref ? `PR Ref: ${doc.custom_pr_ref}` : undefined}
         items={doc?.items || []}
         subtotal={doc?.net_total}
         discount={doc?.discount_amount}
@@ -1337,6 +1344,18 @@ function QuotationModule({ customers = [], items = [] }) {
             )}
           </div>
         )}
+        {hasParty && (
+          <div className="form-group" style={{ marginTop: '1rem' }}>
+            <label className="form-label">PR Ref</label>
+            <input
+              type="text"
+              className="form-input"
+              value={prRef}
+              onChange={(e) => setPrRef(e.target.value)}
+              placeholder="PR reference (optional)"
+            />
+          </div>
+        )}
       </div>
     );
 
@@ -1388,7 +1407,7 @@ function QuotationModule({ customers = [], items = [] }) {
       <TransactionFormLayout
         title={editingQuotation ? `Edit Quotation ${editingQuotation}` : "New Quotation"}
         backLabel="Back to Quotations"
-        onBack={() => { setView('list'); setLineItems([]); setSelectedCustomer(''); setSelectedLeadName(''); setPartySearch(''); setQuotationTo('Customer'); setDiscountAmount('0'); setEditingQuotation(null); }}
+        onBack={() => { setView('list'); setLineItems([]); setSelectedCustomer(''); setSelectedLeadName(''); setPartySearch(''); setQuotationTo('Customer'); setDiscountAmount('0'); setPrRef(''); setEditingQuotation(null); }}
         partySelection={partySelection}
         addItemsSection={addItemsSection}
         lineItems={lineItems}
