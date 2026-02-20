@@ -43,6 +43,8 @@ export function TransactionDetailLayout({
   printDoctype,
   /** Document name for print. Required when printDoctype is set. */
   printDocName,
+  /** Letterhead name (e.g. doc.letter_head) to pass to print URL. */
+  printLetterhead,
 }) {
   const [printing, setPrinting] = useState(false);
   const handlePrint = () => {
@@ -52,7 +54,7 @@ export function TransactionDetailLayout({
     }
     if (printDoctype && printDocName) {
       setPrinting(true);
-      openPrintPdf(printDoctype, printDocName).catch((err) => {
+      openPrintPdf(printDoctype, printDocName, printLetterhead).catch((err) => {
         alert(err?.message || 'Print failed');
       }).finally(() => setPrinting(false));
     }

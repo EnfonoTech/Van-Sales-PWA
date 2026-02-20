@@ -718,7 +718,7 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
                       <button
                         type="button"
                         className="btn btn-primary btn-sm"
-                        onClick={() => openPrintPdf('Payment Entry', payment.name || payment.payment_entry).catch((e) => alert(e?.message || 'Print failed'))}
+                        onClick={() => openPrintPdf('Payment Entry', payment.name || payment.payment_entry, payment.letter_head).catch((e) => alert(e?.message || 'Print failed'))}
                         title="Print (default format with letterhead)"
                       >
                         🖨️ Print Payment

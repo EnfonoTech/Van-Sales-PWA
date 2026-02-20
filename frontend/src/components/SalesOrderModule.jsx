@@ -811,6 +811,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
         pdfUrl={doc?.pdf_url}
         printDoctype="Sales Order"
         printDocName={doc?.name}
+        printLetterhead={doc?.letter_head}
       />
       {errorDialogElement}
       </>

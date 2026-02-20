@@ -410,7 +410,7 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
                   <button
                     type="button"
                     className="btn btn-primary btn-sm"
-                    onClick={() => openPrintPdf('Sales Invoice', returnData.name || returnData.return_invoice).catch((e) => alert(e?.message || 'Print failed'))}
+                    onClick={() => openPrintPdf('Sales Invoice', returnData.name || returnData.return_invoice, returnData.letter_head).catch((e) => alert(e?.message || 'Print failed'))}
                     title="Print (default format with letterhead)"
                   >
                     🖨️ Print

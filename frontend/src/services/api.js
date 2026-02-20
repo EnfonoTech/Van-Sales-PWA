@@ -1128,8 +1128,9 @@ export const logout = async () => {
  * Uses default print format and letterhead from the doc. Only use when doc.docstatus === 1.
  * @param {string} doctype - e.g. 'Sales Invoice', 'Sales Order', 'Quotation', 'Payment Entry'
  * @param {string} name - document name
+ * @param {string} [letterhead] - optional letterhead name (e.g. doc.letter_head) so printview uses doc's letterhead
  */
-export const openPrintPdf = (doctype, name) => {
+export const openPrintPdf = (doctype, name, letterhead) => {
   const params = new URLSearchParams({
     doctype,
     name,
@@ -1137,6 +1138,9 @@ export const openPrintPdf = (doctype, name) => {
     download: '1',
     trigger_print: '1',
   });
+  if (letterhead && String(letterhead).trim()) {
+    params.set('letterhead', String(letterhead).trim());
+  }
   const printUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/printview?${params.toString()}`;
   window.open(printUrl, '_blank', 'noopener');
   return Promise.resolve();

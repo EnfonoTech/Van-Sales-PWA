@@ -1809,7 +1809,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                         <button
                           type="button"
                           className="btn btn-primary btn-sm"
-                          onClick={() => openPrintPdf('Sales Invoice', invoiceName).catch((e) => alert(e?.message || 'Print failed'))}
+                          onClick={() => openPrintPdf('Sales Invoice', invoiceName, invoice.letter_head).catch((e) => alert(e?.message || 'Print failed'))}
                           title="Print (default format with letterhead)"
                         >
                           🖨️ Print Invoice
