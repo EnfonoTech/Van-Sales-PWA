@@ -94,7 +94,15 @@ function QuotationModule({ customers = [], items = [] }) {
   const getPriceValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) >= 0 ? parseFloat(v) : 0);
   const getQuantityValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) > 0 ? parseFloat(v) : 1);
   const getDiscountValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) >= 0 ? parseFloat(v) : 0);
-  const formatDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
+  // Format date as DD/MM/YYYY (same as Sales Invoice)
+  const formatDate = (dateString) => {
+    if (!dateString) return '—';
+    const date = new Date(dateString);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
   const to2 = (v) => (Math.round(Number(v) * 100) / 100).toFixed(2);
   const round2 = (v) => Math.round(Number(v) * 100) / 100;
 

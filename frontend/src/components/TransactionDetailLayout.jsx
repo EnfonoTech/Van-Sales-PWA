@@ -29,7 +29,14 @@ export function TransactionDetailLayout({
   discount,
   tax,
   total,
-  formatDate = (d) => (d ? new Date(d).toLocaleDateString() : '—'),
+  formatDate = (dateString) => {
+    if (!dateString) return '—';
+    const d = new Date(dateString);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  },
   extraActions,
   pdfUrl,
   /** Doctype for print (e.g. 'Sales Invoice', 'Quotation'). When set with printDocName, Print uses API (default format + letterhead). */

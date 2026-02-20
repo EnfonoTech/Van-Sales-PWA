@@ -48,6 +48,15 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
   const [successDialog, setSuccessDialog] = useState({ isOpen: false, title: '', message: '' });
   const [errorDialog, setErrorDialog] = useState({ isOpen: false, title: '', message: '' });
 
+  const formatDate = (dateString) => {
+    if (!dateString) return '—';
+    const date = new Date(dateString);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
+
   // Fetch returns list
   const fetchReturns = async () => {
     try {
@@ -150,8 +159,9 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
   useEffect(() => {
     const fetchInvoices = async () => {
       try {
-        const { invoices } = await getSalesInvoiceList({ limit: 100, offset: 0 });
-        const allInvoices = Array.isArray(invoices) ? invoices : [];
+        const res = await getSalesInvoiceList({ limit: 100, offset: 0 });
+        const invoices = (res && res.invoices && Array.isArray(res.invoices)) ? res.invoices : [];
+        const allInvoices = invoices;
 
         // Filter out draft and cancelled invoices - only show submitted invoices
         let validInvoices = allInvoices.filter(invoice => {
@@ -167,7 +177,7 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
 
         // Filter by selected customer if a customer is selected
         if (selectedCustomerForReturn) {
-          const selectedCustomer = customers.find(c => c.id === selectedCustomerForReturn);
+          const selectedCustomer = (customers || []).find(c => c.id === selectedCustomerForReturn);
           if (selectedCustomer) {
             validInvoices = validInvoices.filter(invoice => {
               const invoiceCustomer = invoice.customerName || invoice.customer_name || invoice.customer || '';
@@ -181,7 +191,7 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
         console.error('Error fetching invoices:', error);
         // Fallback to sales prop if available, but still filter drafts and cancelled
         if (sales && Array.isArray(sales)) {
-          let validSales = sales.filter(sale => {
+          let validSales = (sales || []).filter(sale => {
             const isDraft = sale.docstatus === 0 || sale.status === 'Draft';
             const isCancelled = sale.docstatus === 2 || sale.status === 'Cancelled';
             return !isDraft && !isCancelled;
@@ -189,7 +199,7 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
           
           // Filter by selected customer if a customer is selected
           if (selectedCustomerForReturn) {
-            const selectedCustomer = customers.find(c => c.id === selectedCustomerForReturn);
+            const selectedCustomer = (customers || []).find(c => c.id === selectedCustomerForReturn);
             if (selectedCustomer) {
               validSales = validSales.filter(sale => {
                 const saleCustomer = sale.customerName || sale.customer || '';
@@ -419,7 +429,7 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
                 <div>
                   <div className="text-xs text-gray-600 mb-1">Posting Date</div>
                   <div className="font-semibold">
-                    {returnData.posting_date ? new Date(returnData.posting_date).toLocaleDateString('en-SA') : '-'}
+                    {returnData.posting_date ? formatDate(returnData.posting_date) : '-'}
                   </div>
                 </div>
                 <div>
@@ -624,7 +634,7 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
                     type="text"
                     className="form-input"
                     placeholder="Search customer by name, mobile, or email..."
-                    value={selectedCustomerForReturn ? (customers.find(c => c.id === selectedCustomerForReturn)?.name || customerSearch) : customerSearch}
+                    value={selectedCustomerForReturn ? ((customers || []).find(c => c.id === selectedCustomerForReturn)?.name || customerSearch) : customerSearch}
                     onChange={(e) => {
                       setCustomerSearch(e.target.value);
                       if (!e.target.value) {
@@ -731,7 +741,7 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
             </div>
 
             {selectedCustomerForReturn && (() => {
-              const customer = customers.find(c => c.id === selectedCustomerForReturn);
+              const customer = (customers || []).find(c => c.id === selectedCustomerForReturn);
               return customer ? (
                 <div style={{ padding: '1rem', background: 'var(--gray-50)', borderRadius: 'var(--radius-lg)', marginTop: '1rem' }}>
                   <div className="grid grid-3 gap-4">
@@ -1020,7 +1030,7 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
                   >
                     <td className="font-semibold">{ret.name || ret.return_invoice || ret.id}</td>
                     <td>
-                      {ret.posting_date ? new Date(ret.posting_date).toLocaleDateString('en-SA') : '-'}
+                      {ret.posting_date ? formatDate(ret.posting_date) : '-'}
                     </td>
                     <td>{ret.original_invoice || ret.against_sales_invoice || '-'}</td>
                     <td>{ret.customer_name || ret.customer || '-'}</td>
