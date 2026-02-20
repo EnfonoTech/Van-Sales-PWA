@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
-import { Plus, Eye, FileText, X, Loader2, Edit, Trash2, MapPin, Search } from 'lucide-react';
+import { Plus, Eye, X, Loader2, Edit, Trash2, MapPin, Search } from 'lucide-react';
 import { 
   createCustomer, 
   getCustomerBillingAndPayments,
@@ -14,8 +14,6 @@ import SARSymbol from './SARSymbol';
 function CustomerModule({ customers, sales, payments, onAddCustomer, loadingCustomers }) {
   const [view, setView] = useState('list'); // 'list', 'create', 'statement'
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [transactions, setTransactions] = useState([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
@@ -296,13 +294,6 @@ function CustomerModule({ customers, sales, payments, onAddCustomer, loadingCust
 
   const showStatement = async (customer) => {
     setSelectedCustomer(customer);
-    // Set default dates: end date = today, start date = one month back
-    const today = new Date();
-    const oneMonthAgo = new Date(today);
-    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-    
-    setEndDate(today.toISOString().split('T')[0]);
-    setStartDate(oneMonthAgo.toISOString().split('T')[0]);
     setView('statement');
     
     // Fetch transaction history from API
@@ -694,22 +685,7 @@ function CustomerModule({ customers, sales, payments, onAddCustomer, loadingCust
   }
 
   if (view === 'statement' && selectedCustomer) {
-    // Filter transactions by date range if dates are set
-    const filteredTransactions = transactions.filter(tx => {
-      if (!startDate && !endDate) return true;
-      const txDate = new Date(tx.date);
-      const start = startDate ? new Date(startDate) : null;
-      const end = endDate ? new Date(endDate) : null;
-      
-      if (start && end) {
-        return txDate >= start && txDate <= end;
-      } else if (start) {
-        return txDate >= start;
-      } else if (end) {
-        return txDate <= end;
-      }
-      return true;
-    });
+    const filteredTransactions = transactions;
 
     // Calculate totals from filtered transactions
     const customerSales = filteredTransactions.filter(tx => tx.type === 'sale');
@@ -717,72 +693,6 @@ function CustomerModule({ customers, sales, payments, onAddCustomer, loadingCust
     
     const totalSales = customerSales.reduce((sum, s) => sum + (s.total || s.amount || 0), 0);
     const totalPayments = customerPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-
-    const handlePrint = async () => {
-      if (!selectedCustomer) {
-        alert('Please select a customer first');
-        return;
-      }
-
-      try {
-        // Fetch company from user permission API
-        const companyResponse = await fetch('/api/method/fateh_pwa.pwa.get_user_company', {
-          method: 'GET',
-          credentials: 'same-origin',
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        });
-        
-        const companyData = await companyResponse.json();
-        const company = companyData?.message?.company || companyData?.company;
-        
-        if (!company) {
-          alert('Company not found. Please ensure your user has a company assigned in User Permissions or user defaults.');
-          return;
-        }
-
-        // Build report URL with filters for Accounts Receivable report
-        const reportName = 'Accounts Receivable';
-        
-        // Calculate report date (use endDate if set, otherwise today)
-        const today = new Date();
-        const reportDate = endDate || today.toISOString().split('T')[0];
-
-        // Build query string with filters matching the format:
-        // /app/query-report/Accounts%20Receivable?company=test&report_date=2026-02-11&party_type=Customer&party=["34567890"]&...
-        const queryParams = new URLSearchParams();
-        queryParams.append('company', company);
-        queryParams.append('report_date', reportDate);
-        queryParams.append('party_type', 'Customer');
-        
-        // Party needs to be JSON encoded array: ["customer_name"] then URL encoded
-        const partyArray = JSON.stringify([selectedCustomer.name]);
-        queryParams.append('party', partyArray);
-        
-        // Set default ageing filters
-        queryParams.append('ageing_based_on', 'Due Date');
-        queryParams.append('calculate_ageing_with', 'Report Date');
-        queryParams.append('range', '30, 60, 90, 120');
-
-        // Get base URL (same origin)
-        const baseUrl = window.location.origin;
-        
-        // Encode report name: spaces become %20
-        const encodedReportName = encodeURIComponent(reportName);
-        
-        // Build the report URL
-        // Format: /app/query-report/{encoded_report_name}?{query_params}
-        const reportUrl = `${baseUrl}/app/query-report/${encodedReportName}?${queryParams.toString()}`;
-        
-        // Open report in the same window - Frappe will show the report with Print/PDF buttons
-        // User can click Print or PDF button from the report page
-        window.location.href = reportUrl;
-      } catch (error) {
-        console.error('Error opening print:', error);
-        alert('Error opening print. Please try again.');
-      }
-    };
 
     return (
       <div className="customer-statement fade-in">
@@ -794,40 +704,6 @@ function CustomerModule({ customers, sales, payments, onAddCustomer, loadingCust
           }}>
             Back to List
           </button>
-        </div>
-
-        <div className="card mb-4">
-          <h3 className="mb-4">Statement Period</h3>
-          <div className="grid grid-3 gap-4">
-            <div className="form-group">
-              <label className="form-label">Start Date</label>
-              <input
-                type="date"
-                className="form-input"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">End Date</label>
-              <input
-                type="date"
-                className="form-input"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-            </div>
-            <div className="flex-between mb-6">
-              <button 
-                className="btn btn-secondary"
-                onClick={handlePrint}
-                style={{ backgroundColor: 'var(--secondary)', color: 'white', padding: '1rem 1rem', marginTop: '1.6rem' }}
-              >
-                <FileText size={12} />
-                Print Statement
-              </button>
-            </div>
-          </div>
         </div>
 
         <div className="card mb-4">
