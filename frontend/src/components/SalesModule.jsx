@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Plus, Search, Trash2, Save, Loader2, Check } from 'lucide-react';
-import { getItemPrice, searchItems, createSalesInvoice, updateSalesInvoice, getInvoiceDetails, getItemDetails, submitSalesInvoice, createCustomer, getSalesInvoiceList, getPaymentMethods } from '../services/api';
+import { getItemPrice, searchItems, createSalesInvoice, updateSalesInvoice, getInvoiceDetails, getItemDetails, submitSalesInvoice, createCustomer, getSalesInvoiceList, getPaymentMethods, openPrintPdf } from '../services/api';
 import SARSymbol from './SARSymbol';
 import ErrorDialog from './ErrorDialog';
 import ConfirmationDialog from './ConfirmationDialog';
@@ -1802,27 +1802,21 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                   </div>
                 </div>
                 <div className="text-right">
-                  {invoice.docstatus === 1 && invoice.pdf_url && (
-                    <div style={{ marginBottom: '12px' }}>
-                      <button 
-                        className="btn btn-primary btn-sm"
-                        onClick={() => {
-                          // Use pdf_url from API if available, otherwise fallback to window.print()
-                          const pdfUrl = invoice.pdf_url ?? invoice.data?.pdf_url;
-                          if (pdfUrl) {
-                            // Open PDF in new tab for download/viewing
-                            window.open(pdfUrl, '_blank');
-                          } else {
-                            // Fallback to printing current page
-                            window.print();
-                          }
-                        }}
-                        title="Open PDF invoice"
-                      >
-                        🖨️ Print Invoice
-                      </button>
-                    </div>
-                  )}
+                  {invoice.docstatus === 1 && (() => {
+                    const invoiceName = invoice.invoice_name || invoice.id || invoice.name;
+                    return invoiceName ? (
+                      <div style={{ marginBottom: '12px' }}>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={() => openPrintPdf('Sales Invoice', invoiceName).catch((e) => alert(e?.message || 'Print failed'))}
+                          title="Print (default format with letterhead)"
+                        >
+                          🖨️ Print Invoice
+                        </button>
+                      </div>
+                    ) : null;
+                  })()}
                   <div className="text-sm text-gray-600">Date</div>
                   <div className="font-semibold">{formatDate(invoice.date || invoice.posting_date)}</div>
                   {invoice.dueDate && (

@@ -1124,6 +1124,25 @@ export const logout = async () => {
 };
 
 /**
+ * Open Frappe printview page for a document (same print page for all: Sales Invoice, Sales Order, Quotation, Payment Entry).
+ * Uses default print format and letterhead from the doc. Only use when doc.docstatus === 1.
+ * @param {string} doctype - e.g. 'Sales Invoice', 'Sales Order', 'Quotation', 'Payment Entry'
+ * @param {string} name - document name
+ */
+export const openPrintPdf = (doctype, name) => {
+  const params = new URLSearchParams({
+    doctype,
+    name,
+    no_letterhead: '0',
+    download: '1',
+    trigger_print: '1',
+  });
+  const printUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/printview?${params.toString()}`;
+  window.open(printUrl, '_blank', 'noopener');
+  return Promise.resolve();
+};
+
+/**
  * Get current user information
  * @returns {Promise<Object>} User info (name, email, full_name, user_image, company)
  */

@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Search, Loader2, X } from 'lucide-react';
 import SARSymbol from './SARSymbol';
 import SuccessDialog from './SuccessDialog';
-import { createPaymentEntry, getOutstandingInvoicesForPayment, getPaymentEntryDetails, getPaymentMethods } from '../services/api';
+import { createPaymentEntry, getOutstandingInvoicesForPayment, getPaymentEntryDetails, getPaymentMethods, openPrintPdf } from '../services/api';
 import { Trash2 } from 'lucide-react';
 
 function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustomers, loadingPayments, loadingSales }) {
@@ -713,25 +713,18 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
                   </div>
                 </div>
                 <div className="text-right">
-                  <div style={{ marginBottom: '12px' }}>
-                    <button 
-                      className="btn btn-primary btn-sm"
-                      onClick={() => {
-                        // Use pdf_url from API if available, otherwise fallback to window.print()
-                        const pdfUrl = payment.pdf_url;
-                        if (pdfUrl) {
-                          // Open PDF in new tab for download/viewing
-                          window.open(pdfUrl, '_blank');
-                        } else {
-                          // Fallback to printing current page
-                          window.print();
-                        }
-                      }}
-                      title={payment.pdf_url ? 'Open PDF payment receipt' : 'Print payment receipt'}
-                    >
-                      🖨️ Print Payment
-                    </button>
-                  </div>
+                  {payment.docstatus === 1 && (payment.name || payment.payment_entry) && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={() => openPrintPdf('Payment Entry', payment.name || payment.payment_entry).catch((e) => alert(e?.message || 'Print failed'))}
+                        title="Print (default format with letterhead)"
+                      >
+                        🖨️ Print Payment
+                      </button>
+                    </div>
+                  )}
                   <div className="text-sm text-gray-600">Date</div>
                   <div className="font-semibold">
                     {formatDate(payment.posting_date || payment.date)}

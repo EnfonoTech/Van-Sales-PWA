@@ -301,6 +301,92 @@ def get_csrf_token():
     return _get_csrf_token()
 
 
+# Allowed doctypes for PWA print (submitted docs only, default print format + doc letterhead)
+_PWA_PRINT_DOCTYPES = frozenset({
+    "Sales Invoice", "Sales Order", "Quotation", "Payment Entry",
+})
+_PWA_PRINT_TOKEN_PREFIX = "pwa_print:"
+_PWA_PRINT_TOKEN_TTL = 120  # seconds
+
+
+@frappe.whitelist(allow_guest=False, methods=["GET"])
+def get_print_pdf_token(doctype=None, name=None):
+    """
+    Return a short-lived one-time token to open print PDF via URL (no blob).
+    Frontend can then open: /api/method/fateh_pwa.pwa.get_print_pdf?doctype=X&name=Y&token=...
+    """
+    doctype = doctype or frappe.form_dict.get("doctype")
+    name = name or frappe.form_dict.get("name")
+    if not doctype or not name:
+        frappe.throw(_("doctype and name are required"), frappe.ValidationError)
+    if doctype not in _PWA_PRINT_DOCTYPES:
+        frappe.throw(_("Print not allowed for this document type"), frappe.PermissionError)
+    doc = frappe.get_doc(doctype, name)
+    if cint(doc.docstatus) != 1:
+        frappe.throw(_("Only submitted documents can be printed"), frappe.ValidationError)
+    doc.check_permission("print")
+    token = secrets.token_urlsafe(32)
+    cache_key = _PWA_PRINT_TOKEN_PREFIX + token
+    frappe.cache().set_value(cache_key, {"doctype": doctype, "name": name}, expires_in_sec=_PWA_PRINT_TOKEN_TTL)
+    return {"status": "success", "token": token}
+
+
+def _get_print_pdf_with_token_or_auth():
+    """Common logic: resolve doctype/name from token or request, validate, return PDF."""
+    doctype = frappe.form_dict.get("doctype")
+    name = frappe.form_dict.get("name")
+    token = frappe.form_dict.get("token")
+    if token:
+        cache_key = _PWA_PRINT_TOKEN_PREFIX + token
+        payload = frappe.cache().get_value(cache_key)
+        if not payload:
+            frappe.throw(_("Print link expired or invalid. Please try again."), frappe.ValidationError)
+        frappe.cache().delete_value(cache_key)
+        doctype = payload.get("doctype")
+        name = payload.get("name")
+    if not doctype or not name:
+        frappe.throw(_("doctype and name are required"), frappe.ValidationError)
+    if doctype not in _PWA_PRINT_DOCTYPES:
+        frappe.throw(_("Print not allowed for this document type"), frappe.PermissionError)
+    doc = frappe.get_doc(doctype, name)
+    if cint(doc.docstatus) != 1:
+        frappe.throw(_("Only submitted documents can be printed"), frappe.ValidationError)
+    if not token:
+        doc.check_permission("print")
+    meta = frappe.get_meta(doctype)
+    print_format = meta.default_print_format or "Standard"
+    letterhead = doc.get("letter_head") or None
+    frappe.local.flags.ignore_print_permissions = True
+    try:
+        pdf_content = frappe.get_print(
+            doctype,
+            name,
+            print_format=print_format,
+            doc=doc,
+            as_pdf=True,
+            letterhead=letterhead,
+            no_letterhead=0,
+        )
+    finally:
+        frappe.local.flags.ignore_print_permissions = False
+    safe_name = str(name).replace(" ", "-").replace("/", "-")
+    frappe.local.response.filename = f"{safe_name}.pdf"
+    frappe.local.response.filecontent = pdf_content
+    frappe.local.response.type = "pdf"
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+def get_print_pdf(doctype=None, name=None):
+    """
+    Return PDF for a submitted document using default print format and document's letterhead.
+    Call with ?token=... (from get_print_pdf_token) to open in new tab without auth; or with auth header.
+    No hardcoded print format: uses DocType default_print_format or Standard.
+    Letterhead from doc.letter_head or default letterhead.
+    Only allowed for submitted docs (docstatus == 1).
+    """
+    _get_print_pdf_with_token_or_auth()
+
+
 @frappe.whitelist(allow_guest=False, methods=["GET"])
 def get_items_list():
     """

@@ -7,7 +7,8 @@ import {
   getSalesReturnDetails, 
   getSalesReturnsList,
   getInvoiceDetails,
-  getSalesInvoiceList
+  getSalesInvoiceList,
+  openPrintPdf
 } from '../services/api';
 import SARSymbol from './SARSymbol';
 import SuccessDialog from './SuccessDialog';
@@ -393,7 +394,19 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
         ) : (
           <>
             <div className="card mb-4">
-              <h3 className="mb-4">Return Information</h3>
+              <div className="flex-between mb-4">
+                <h3 className="mb-0">Return Information</h3>
+                {!isDraft && (returnData.name || returnData.return_invoice) && (
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={() => openPrintPdf('Sales Invoice', returnData.name || returnData.return_invoice).catch((e) => alert(e?.message || 'Print failed'))}
+                    title="Print (default format with letterhead)"
+                  >
+                    🖨️ Print
+                  </button>
+                )}
+              </div>
               <div className="grid grid-3 gap-4">
                 <div>
                   <div className="text-xs text-gray-600 mb-1">Return Invoice</div>

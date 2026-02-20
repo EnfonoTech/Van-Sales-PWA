@@ -1,9 +1,12 @@
 /**
- * Shared detail view layout for Sales Invoice / Quotation / Sales Order.
- * Same UI as SalesModule detail: header (name, status, date), party/customer info, items table, totals.
+ * Shared detail view layout for Sales Invoice / Quotation / Sales Order / Sales Return / Payment.
+ * Same UI: header (name, status, date), party/customer info, items table, totals.
+ * Print: only when docstatus === 1 (submitted); uses default print format + doc letterhead via API.
  */
 import * as React from 'react';
+import { useState } from 'react';
 import SARSymbol from './SARSymbol';
+import { openPrintPdf } from '../services/api';
 
 export function TransactionDetailLayout({
   title = 'Details',
@@ -29,7 +32,26 @@ export function TransactionDetailLayout({
   formatDate = (d) => (d ? new Date(d).toLocaleDateString() : '—'),
   extraActions,
   pdfUrl,
+  /** Doctype for print (e.g. 'Sales Invoice', 'Quotation'). When set with printDocName, Print uses API (default format + letterhead). */
+  printDoctype,
+  /** Document name for print. Required when printDoctype is set. */
+  printDocName,
 }) {
+  const [printing, setPrinting] = useState(false);
+  const handlePrint = () => {
+    if (pdfUrl) {
+      window.open(pdfUrl, '_blank');
+      return;
+    }
+    if (printDoctype && printDocName) {
+      setPrinting(true);
+      openPrintPdf(printDoctype, printDocName).catch((err) => {
+        alert(err?.message || 'Print failed');
+      }).finally(() => setPrinting(false));
+    }
+  };
+  const showPrint = docstatus === 1 && (pdfUrl || (printDoctype && printDocName));
+
   return (
     <div className="sales-detail fade-in">
       <div className="flex-between mb-6">
@@ -51,15 +73,16 @@ export function TransactionDetailLayout({
               </div>
             </div>
             <div className="text-right">
-              {pdfUrl && docstatus === 1 && (
+              {showPrint && (
                 <div style={{ marginBottom: '12px' }}>
                   <button
                     type="button"
                     className="btn btn-primary btn-sm"
-                    onClick={() => window.open(pdfUrl, '_blank')}
-                    title="Open PDF"
+                    onClick={handlePrint}
+                    disabled={printing}
+                    title="Print (default format with letterhead)"
                   >
-                    🖨️ Print
+                    {printing ? '…' : '🖨️ Print'}
                   </button>
                 </div>
               )}

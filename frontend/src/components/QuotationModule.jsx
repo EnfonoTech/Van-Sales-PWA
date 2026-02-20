@@ -901,6 +901,8 @@ function QuotationModule({ customers = [], items = [] }) {
         formatDate={formatDate}
         extraActions={extraActions}
         pdfUrl={doc?.pdf_url}
+        printDoctype="Quotation"
+        printDocName={doc?.name}
       />
       {errorDialogElement}
       </>
