@@ -1472,14 +1472,17 @@ def create_customer():
                 }
             }
         
-        customer_doc = frappe.get_doc({
+        doc_dict = {
             "doctype": "Customer",
             "customer_name": customer_name,
             "customer_type": data.get("customer_type", "Company"),
             "customer_group": data.get("customer_group", "Commercial"),
             "territory": data.get("territory", "Saudi Arabia"),
-            "custom_vat_registration_number": data.get("custom_vat_registration_number")
-        })
+            "custom_vat_registration_number": data.get("custom_vat_registration_number"),
+        }
+        if data.get("custom_customer_name_arabic") is not None:
+            doc_dict["custom_customer_name_arabic"] = data.get("custom_customer_name_arabic")
+        customer_doc = frappe.get_doc(doc_dict)
         
         # Add sales person to sales_team with 100% contribution
         sales_person = _get_user_sales_person()

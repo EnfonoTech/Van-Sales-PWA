@@ -18,7 +18,7 @@ function CustomerModule({ customers, sales, payments, onAddCustomer, loadingCust
   const [transactions, setTransactions] = useState([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [formData, setFormData] = useState({
-    customer_name_arabic: '',
+    custom_customer_name_arabic: '',
     customer_type: 'Individual',
     customer_group: 'Commercial',
     territory: 'Saudi Arabia',
@@ -263,7 +263,7 @@ function CustomerModule({ customers, sales, payments, onAddCustomer, loadingCust
       }
 
       const result = await createCustomer(formData);
-      const customerName = result.name || result.customer_name || formData.customer_name_arabic;
+      const customerName = result.name || result.customer_name || formData.custom_customer_name_arabic;
       
       // Add to local state
       onAddCustomer({
@@ -616,9 +616,9 @@ function CustomerModule({ customers, sales, payments, onAddCustomer, loadingCust
                   <label className="form-label">Customer Name *</label>
                   <input
                     type="text"
-                    name="customer_name_arabic"
+                    name="custom_customer_name_arabic"
                     className="form-input"
-                    value={formData.customer_name_arabic}
+                    value={formData.custom_customer_name_arabic}
                     onChange={handleChange}
                     placeholder="Enter customer name"
                     required

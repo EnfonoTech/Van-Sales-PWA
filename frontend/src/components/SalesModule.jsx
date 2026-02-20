@@ -34,7 +34,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
   const [editingInvoice, setEditingInvoice] = useState(null);
   const [showQuickCustomerForm, setShowQuickCustomerForm] = useState(false);
   const [quickCustomerFormData, setQuickCustomerFormData] = useState({
-    customer_name_arabic: '',
+    custom_customer_name_arabic: '',
     custom_vat_registration_number: ''
   });
   const [quickCustomerVatError, setQuickCustomerVatError] = useState('');
@@ -619,7 +619,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
       return;
     }
     
-    if (!quickCustomerFormData.customer_name_arabic) {
+    if (!quickCustomerFormData.custom_customer_name_arabic) {
       setErrorDialog({
         isOpen: true,
         title: 'Validation Error',
@@ -631,7 +631,8 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
     setSubmittingQuickCustomer(true);
     try {
       const customerData = {
-        customer_name: quickCustomerFormData.customer_name_arabic,
+        customer_name: quickCustomerFormData.custom_customer_name_arabic,
+        custom_customer_name_arabic: quickCustomerFormData.custom_customer_name_arabic,
         custom_vat_registration_number: quickCustomerFormData.custom_vat_registration_number || ''
       };
       
@@ -663,8 +664,8 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         id: result.name || result.id || result.customer_name || `CUST${String(customers.length + 1).padStart(3, '0')}`,
         name: result.customer_name || customerName,
         custom_customer_name_english: customerData.customer_name || customerData.custom_customer_name_english,
-        custom_customer_name_arabic: customerData.customer_name_arabic || '',
-        customer_name: customerData.customer_name || customerData.customer_name_arabic,
+custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
+    customer_name: customerData.customer_name || customerData.custom_customer_name_arabic,
         custom_vat_registration_number: customerData.custom_vat_registration_number,
         balance: 0
       };
@@ -676,7 +677,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
       
       // Reset form
       setQuickCustomerFormData({
-        customer_name_arabic: '',
+        custom_customer_name_arabic: '',
         custom_vat_registration_number: ''
       });
       setQuickCustomerVatError('');
@@ -1258,7 +1259,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                     className="btn btn-sm btn-secondary"
                     onClick={() => {
                       setShowQuickCustomerForm(false);
-                      setQuickCustomerFormData({ customer_name_arabic: '', custom_vat_registration_number: '' });
+                      setQuickCustomerFormData({ custom_customer_name_arabic: '', custom_vat_registration_number: '' });
                       setQuickCustomerVatError('');
                     }}
                   >
@@ -1273,7 +1274,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                         type="text"
                         name="customer_name_arabic"
                         className="form-input"
-                        value={quickCustomerFormData.customer_name_arabic}
+                        value={quickCustomerFormData.custom_customer_name_arabic}
                         onChange={handleQuickCustomerChange}
                         required
                       />
@@ -1322,7 +1323,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                       className="btn btn-secondary"
                       onClick={() => {
                         setShowQuickCustomerForm(false);
-                        setQuickCustomerFormData({ customer_name_arabic: '', custom_vat_registration_number: '' });
+                        setQuickCustomerFormData({ custom_customer_name_arabic: '', custom_vat_registration_number: '' });
                         setQuickCustomerVatError('');
                       }}
                       disabled={submittingQuickCustomer}

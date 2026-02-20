@@ -295,7 +295,8 @@ const transformCustomerToAPI = (uiCustomer) => {
   // Always use the custom field names as required by the API
   return {
     custom_customer_name_english: uiCustomer.custom_customer_name_english || '',
-    customer_name: uiCustomer.customer_name || uiCustomer.customer_name_arabic || '',
+    customer_name: uiCustomer.customer_name || uiCustomer.custom_customer_name_arabic || '',
+    custom_customer_name_arabic: uiCustomer.custom_customer_name_arabic || '',
     custom_vat_registration_number: uiCustomer.custom_vat_registration_number || ''
   };
 };
