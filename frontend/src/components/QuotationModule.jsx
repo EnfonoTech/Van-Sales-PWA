@@ -3,12 +3,15 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Search, Loader2, Check } from 'lucide-react';
 import ErrorDialog from './ErrorDialog';
+import ConfirmationDialog from './ConfirmationDialog';
 import {
   getQuotationList,
   getQuotationDetails,
   createQuotation,
   updateQuotation,
   submitQuotation,
+  cancelQuotation,
+  amendQuotation,
   getLeadList,
   createLead,
   getItemDetails,
@@ -79,6 +82,8 @@ function QuotationModule({ customers = [], items = [] }) {
   const [submitting, setSubmitting] = useState(false);
   const [submittingQuotation, setSubmittingQuotation] = useState(false);
   const [convertingToSalesOrder, setConvertingToSalesOrder] = useState(false);
+  const [cancellingQuotation, setCancellingQuotation] = useState(false);
+  const [amendingQuotation, setAmendingQuotation] = useState(false);
   const [editingQuotation, setEditingQuotation] = useState(null);
   const [showQuickLeadForm, setShowQuickLeadForm] = useState(false);
   const [quickLeadFormData, setQuickLeadFormData] = useState({
@@ -90,6 +95,7 @@ function QuotationModule({ customers = [], items = [] }) {
   });
   const [submittingQuickLead, setSubmittingQuickLead] = useState(false);
   const [errorDialog, setErrorDialog] = useState({ isOpen: false, title: '', message: '' });
+  const [confirmationDialog, setConfirmationDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null, onCancel: null });
 
   const getPriceValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) >= 0 ? parseFloat(v) : 0);
   const getQuantityValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) > 0 ? parseFloat(v) : 1);
@@ -587,7 +593,6 @@ function QuotationModule({ customers = [], items = [] }) {
       });
       return;
     }
-    if (!confirm('Create a Sales Order from this Quotation?')) return;
     setConvertingToSalesOrder(true);
     try {
       const result = await convertQuotationToSalesOrder(doc.name);
@@ -623,6 +628,154 @@ function QuotationModule({ customers = [], items = [] }) {
     } finally {
       setConvertingToSalesOrder(false);
     }
+  };
+
+  const handleCancelQuotation = async () => {
+    const doc = quotationDetail || selectedQuotation;
+    if (!doc?.name || doc.docstatus !== 1) return;
+    setCancellingQuotation(true);
+    try {
+      await cancelQuotation(doc.name);
+      const updated = await getQuotationDetails(doc.name);
+      setQuotationDetail(updated);
+      setSelectedQuotation(updated);
+    } catch (err) {
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error Cancelling Quotation',
+        message: err?.message || 'Failed to cancel quotation'
+      });
+    } finally {
+      setCancellingQuotation(false);
+    }
+  };
+
+  const handleAmendQuotation = async () => {
+    const doc = quotationDetail || selectedQuotation;
+    if (!doc?.name || doc.docstatus !== 2) return;
+    setAmendingQuotation(true);
+    setLoadingDetail(true);
+    try {
+      const result = await amendQuotation(doc.name);
+      const newName = result?.name;
+      if (!newName) {
+        setAmendingQuotation(false);
+        setLoadingDetail(false);
+        return;
+      }
+      const details = await getQuotationDetails(newName);
+      const quotationDoc = details.quotation || details;
+      const partyName = quotationDoc.party_name || quotationDoc.customer_name || null;
+      const customerName = quotationDoc.quotation_to === 'Customer' ? partyName : null;
+      const itemsForForm = await Promise.all((quotationDoc.items || []).map(async (item) => {
+        const itemCode = item.item_code || item.code;
+        const currentPrice = item.rate ?? item.price ?? 0;
+        const currentUOM = item.uom || item.sales_uom || item.stock_uom || '';
+        let itemDetails = null;
+        try {
+          itemDetails = await getItemDetails(itemCode, customerName);
+        } catch (e) {
+          console.warn(`Failed to fetch details for item ${itemCode}:`, e);
+        }
+        const stockUOM = itemDetails?.stock_uom || item.stock_uom || currentUOM;
+        const uomConversions = itemDetails?.uom_conversions || item.uom_conversions || [];
+        let priceListRate = itemDetails?.item_prices?.[0]?.price_list_rate || itemDetails?.price_list_rate || item.price_list_rate;
+        if (!priceListRate && currentUOM !== stockUOM && currentPrice) {
+          const currentConv = uomConversions.find(conv => conv.uom === currentUOM);
+          priceListRate = currentConv?.conversion_factor ? currentPrice / currentConv.conversion_factor : currentPrice;
+        } else if (!priceListRate) {
+          priceListRate = currentPrice;
+        }
+        return {
+          code: itemCode,
+          name: item.item_name || item.name,
+          price: to2(currentPrice),
+          price_list_rate: Number(to2(priceListRate)),
+          uom: currentUOM,
+          stock_uom: stockUOM,
+          sales_uom: itemDetails?.sales_uom || itemDetails?.stock_uom || item.sales_uom || item.stock_uom || stockUOM,
+          uom_conversions: uomConversions,
+          quantity: (item.qty || item.quantity || 1).toString(),
+          originalPrice: Number(to2(priceListRate)),
+        };
+      }));
+      setQuotationTo(quotationDoc.quotation_to || 'Customer');
+      if (quotationDoc.quotation_to === 'Customer') {
+        const foundCustomer = customers.find(c => c.name === quotationDoc.party_name || c.name === quotationDoc.customer_name);
+        if (foundCustomer) {
+          setSelectedCustomer(foundCustomer.id);
+          setPartySearch(foundCustomer.custom_customer_name_english || foundCustomer.name);
+        } else {
+          setSelectedCustomer('');
+          setPartySearch(quotationDoc.customer_name || quotationDoc.party_name || '');
+        }
+        setSelectedLeadName('');
+      } else {
+        setSelectedLeadName(quotationDoc.party_name || '');
+        setPartySearch(quotationDoc.party_name || '');
+        setSelectedCustomer('');
+      }
+      setLineItems(itemsForForm);
+      setDiscountAmount((quotationDoc.discount_amount || 0).toString());
+      setEditingQuotation(newName);
+      setView('create');
+    } catch (err) {
+      setErrorDialog({
+        isOpen: true,
+        title: 'Error Amending Quotation',
+        message: err?.message || 'Failed to amend quotation'
+      });
+    } finally {
+      setAmendingQuotation(false);
+      setLoadingDetail(false);
+    }
+  };
+
+  const closeConfirmationDialog = () => setConfirmationDialog({ isOpen: false, title: '', message: '', onConfirm: null, onCancel: null });
+
+  const openCancelQuotationDialog = () => {
+    const doc = quotationDetail || selectedQuotation;
+    if (!doc?.name || doc.docstatus !== 1) return;
+    setConfirmationDialog({
+      isOpen: true,
+      title: 'Cancel Quotation',
+      message: 'Cancel this quotation? You can create an amended quotation from it after cancelling.',
+      onConfirm: () => {
+        closeConfirmationDialog();
+        handleCancelQuotation();
+      },
+      onCancel: closeConfirmationDialog,
+    });
+  };
+
+  const openAmendQuotationDialog = () => {
+    const doc = quotationDetail || selectedQuotation;
+    if (!doc?.name || doc.docstatus !== 2) return;
+    setConfirmationDialog({
+      isOpen: true,
+      title: 'Amend Quotation',
+      message: 'Create an amended quotation from this cancelled one? A new draft will be created.',
+      onConfirm: () => {
+        closeConfirmationDialog();
+        handleAmendQuotation();
+      },
+      onCancel: closeConfirmationDialog,
+    });
+  };
+
+  const openConvertToSalesOrderDialog = () => {
+    const doc = quotationDetail || selectedQuotation;
+    if (!doc?.name || doc.docstatus !== 1) return;
+    setConfirmationDialog({
+      isOpen: true,
+      title: 'Create Sales Order',
+      message: 'Create a Sales Order from this Quotation?',
+      onConfirm: () => {
+        closeConfirmationDialog();
+        handleConvertToSalesOrder();
+      },
+      onCancel: closeConfirmationDialog,
+    });
   };
 
   const handleCreateQuickLead = async (e) => {
@@ -827,10 +980,22 @@ function QuotationModule({ customers = [], items = [] }) {
     />
   );
 
+  const confirmationDialogElement = (
+    <ConfirmationDialog
+      isOpen={confirmationDialog.isOpen}
+      onClose={closeConfirmationDialog}
+      onConfirm={confirmationDialog.onConfirm}
+      onCancel={confirmationDialog.onCancel}
+      title={confirmationDialog.title}
+      message={confirmationDialog.message}
+    />
+  );
+
   if (view === 'detail') {
     const doc = quotationDetail || selectedQuotation;
     const isDraft = doc?.docstatus === 0 || doc?.status === 'Draft' || !doc?.docstatus;
     const isSubmitted = doc?.docstatus === 1;
+    const isCancelled = doc?.docstatus === 2;
     const extraActions = (
       <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {isDraft && (
@@ -864,22 +1029,51 @@ function QuotationModule({ customers = [], items = [] }) {
           </>
         )}
         {isSubmitted && (
+          <>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={openConvertToSalesOrderDialog}
+              disabled={convertingToSalesOrder}
+            >
+              {convertingToSalesOrder ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Converting...
+                </>
+              ) : (
+                <>
+                  <Check size={16} />
+                  Create Sales Order
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={openCancelQuotationDialog}
+              disabled={cancellingQuotation}
+              title="Cancel this quotation"
+            >
+              {cancellingQuotation ? <Loader2 size={16} className="animate-spin" /> : 'Cancel'}
+            </button>
+          </>
+        )}
+        {isCancelled && (
           <button
             type="button"
-            className="btn btn-primary btn-sm"
-            onClick={handleConvertToSalesOrder}
-            disabled={convertingToSalesOrder}
+            className="btn btn-secondary btn-sm"
+            onClick={handleAmendQuotation}
+            disabled={amendingQuotation}
+            title="Create amended draft and open in edit form"
           >
-            {convertingToSalesOrder ? (
+            {amendingQuotation ? (
               <>
                 <Loader2 size={16} className="animate-spin" />
-                Converting...
+                Amending...
               </>
             ) : (
-              <>
-                <Check size={16} />
-                Create Sales Order
-              </>
+              'Amend'
             )}
           </button>
         )}
@@ -891,7 +1085,7 @@ function QuotationModule({ customers = [], items = [] }) {
       <TransactionDetailLayout
         title="Quotation Details"
         docName={doc?.name}
-        status={doc?.status || (doc?.docstatus === 1 ? 'Submitted' : 'Draft')}
+        status={doc?.status || (doc?.docstatus === 1 ? 'Submitted' : doc?.docstatus === 2 ? 'Cancelled' : 'Draft')}
         docstatus={doc?.docstatus}
         dateLabel="Date"
         dateValue={doc?.transaction_date}
@@ -914,6 +1108,7 @@ function QuotationModule({ customers = [], items = [] }) {
         printLetterhead={doc?.letter_head}
       />
       {errorDialogElement}
+      {confirmationDialogElement}
       </>
     );
   }

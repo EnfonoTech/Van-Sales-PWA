@@ -2262,6 +2262,54 @@ def submit_quotation():
         return {"status": "error", "message": str(e) or "Failed to submit quotation"}
 
 
+@frappe.whitelist(allow_guest=False, methods=["POST"])
+def cancel_quotation():
+    """Cancel a submitted Quotation (docstatus = 2). Only for submitted docs."""
+    try:
+        name = frappe.form_dict.get("name")
+        if frappe.request.data:
+            data = json.loads(frappe.request.data)
+            name = data.get("name") or name
+        if not name or not frappe.db.exists("Quotation", name):
+            return {"status": "error", "message": "Quotation not found"}
+        doc = frappe.get_doc("Quotation", name)
+        if doc.docstatus == 0:
+            return {"status": "error", "message": "Draft quotation cannot be cancelled"}
+        if doc.docstatus == 2:
+            return {"status": "ok", "message": "Quotation already cancelled", "name": doc.name}
+        doc.cancel()
+        return {"status": "ok", "message": "Quotation cancelled", "name": doc.name}
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Cancel Quotation PWA Error")
+        return {"status": "error", "message": str(e) or "Failed to cancel quotation"}
+
+
+@frappe.whitelist(allow_guest=False, methods=["POST"])
+def amend_quotation():
+    """Create an amended draft from a cancelled Quotation only (docstatus must be 2)."""
+    try:
+        name = frappe.form_dict.get("name")
+        if frappe.request.data:
+            data = json.loads(frappe.request.data)
+            name = data.get("name") or name
+        if not name or not frappe.db.exists("Quotation", name):
+            return {"status": "error", "message": "Quotation not found"}
+        doc = frappe.get_doc("Quotation", name)
+        if doc.docstatus == 0:
+            return {"status": "error", "message": "Draft quotation cannot be amended. Submit and cancel first."}
+        if doc.docstatus == 1:
+            return {"status": "error", "message": "Only cancelled quotations can be amended. Cancel the quotation first."}
+        # docstatus == 2: cancelled — create new draft from it
+        amended = frappe.copy_doc(doc)
+        amended.docstatus = 0
+        amended.amended_from = name
+        amended.insert()
+        return {"status": "ok", "message": "Amended quotation created", "name": amended.name}
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Amend Quotation PWA Error")
+        return {"status": "error", "message": str(e) or "Failed to amend quotation"}
+
+
 # ---------- Sales Order ----------
 @frappe.whitelist(allow_guest=False, methods=["GET"])
 def get_sales_order_list():

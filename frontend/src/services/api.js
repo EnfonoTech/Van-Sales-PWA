@@ -1545,6 +1545,28 @@ export const submitQuotation = async (name) => {
   return msg;
 };
 
+export const cancelQuotation = async (name) => {
+  const response = await apiRequest('/method/fateh_pwa.pwa.cancel_quotation', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const msg = response?.message || response;
+  if (msg?.status === 'error') throw new Error(msg.message || 'Failed to cancel quotation');
+  return msg;
+};
+
+export const amendQuotation = async (name) => {
+  const response = await apiRequest('/method/fateh_pwa.pwa.amend_quotation', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const msg = response?.message || response;
+  if (msg?.status === 'error') throw new Error(msg.message || 'Failed to amend quotation');
+  return msg;
+};
+
 export const updateQuotation = async (data) => {
   const response = await apiRequest('/method/fateh_pwa.pwa.update_quotation', {
     method: 'POST',
@@ -2326,6 +2348,8 @@ export default {
   getQuotationDetails,
   createQuotation,
   submitQuotation,
+  cancelQuotation,
+  amendQuotation,
   // Sales Orders
   getSalesOrderList,
   getSalesOrderDetails,
