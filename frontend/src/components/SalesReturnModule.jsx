@@ -163,7 +163,7 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
         const invoices = (res && res.invoices && Array.isArray(res.invoices)) ? res.invoices : [];
         const allInvoices = invoices;
 
-        // Filter out draft and cancelled invoices - only show submitted invoices
+        // Filter out draft, cancelled, and fully returned invoices - only show invoices that can be returned
         let validInvoices = allInvoices.filter(invoice => {
           // Exclude draft invoices (docstatus = 0 or status = 'Draft')
           const isDraft = invoice.docstatus === 0 || invoice.status === 'Draft';
@@ -171,8 +171,10 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
           // Exclude cancelled invoices (docstatus = 2 or status = 'Cancelled')
           const isCancelled = invoice.docstatus === 2 || invoice.status === 'Cancelled';
           
-          // Only include invoices that are not draft and not cancelled (i.e., submitted)
-          return !isDraft && !isCancelled;
+          // Exclude fully returned invoices (status = 'Return') - no need to show in "select invoice to return" list
+          const isFullyReturned = (invoice.status || '').toString().toLowerCase() === 'return';
+          
+          return !isDraft && !isCancelled && !isFullyReturned;
         });
 
         // Filter by selected customer if a customer is selected
@@ -188,16 +190,19 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
 
         setAvailableInvoices(validInvoices);
       } catch (error) {
-        console.error('Error fetching invoices:', error);
-        // Fallback to sales prop if available, but still filter drafts and cancelled
+        const isOffline = error?.message === 'OFFLINE';
+        if (!isOffline) {
+          console.error('Error fetching invoices:', error);
+        }
+        // On failure (e.g. offline), clear list then apply sales fallback if available
+        setAvailableInvoices([]);
         if (sales && Array.isArray(sales)) {
           let validSales = (sales || []).filter(sale => {
             const isDraft = sale.docstatus === 0 || sale.status === 'Draft';
             const isCancelled = sale.docstatus === 2 || sale.status === 'Cancelled';
-            return !isDraft && !isCancelled;
+            const isFullyReturned = (sale.status || '').toString().toLowerCase() === 'return';
+            return !isDraft && !isCancelled && !isFullyReturned;
           });
-          
-          // Filter by selected customer if a customer is selected
           if (selectedCustomerForReturn) {
             const selectedCustomer = (customers || []).find(c => c.id === selectedCustomerForReturn);
             if (selectedCustomer) {
@@ -207,7 +212,6 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
               });
             }
           }
-          
           setAvailableInvoices(validSales);
         }
       }
@@ -424,7 +428,7 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
                 </div>
                 <div>
                   <div className="text-xs text-gray-600 mb-1">Original Invoice</div>
-                  <div className="font-semibold">{returnData.original_invoice || returnData.against_sales_invoice || '-'}</div>
+                  <div className="font-semibold">{returnData.original_invoice || returnData.against_sales_invoice || returnData.return_against || '-'}</div>
                 </div>
                 <div>
                   <div className="text-xs text-gray-600 mb-1">Posting Date</div>

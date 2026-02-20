@@ -2147,16 +2147,19 @@ export const getSalesReturnsList = async (filters = {}) => {
       data = response.message;
     }
     
-    // Handle array response
+    // Handle array response; normalize original invoice from return_against for list view
+    let list = [];
     if (Array.isArray(data)) {
-      return data;
+      list = data;
     } else if (data && Array.isArray(data.returns)) {
-      return data.returns;
+      list = data.returns;
     } else if (data && Array.isArray(data.data)) {
-      return data.data;
+      list = data.data;
     }
-    
-    return [];
+    return list.map((item) => ({
+      ...item,
+      original_invoice: item.original_invoice ?? item.return_against ?? item.against_sales_invoice,
+    }));
   } catch (error) {
     console.error('Error fetching sales returns list:', error);
     throw error;
