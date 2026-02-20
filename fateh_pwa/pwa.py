@@ -2343,12 +2343,12 @@ def get_sales_order_list():
         "Sales Order",
         filters=filters,
         or_filters=or_filters,
-        fields=["name", "customer", "customer_name", "transaction_date", "delivery_date", "grand_total", "status", "docstatus"],
+        fields=["name", "customer", "customer_name", "transaction_date", "delivery_date", "grand_total", "status", "docstatus", "po_no"],
         order_by="modified desc",
         limit_start=offset,
         limit_page_length=limit,
     )
-    out = [{"name": n.name, "customer": n.customer, "customer_name": n.customer_name, "transaction_date": n.transaction_date, "delivery_date": n.delivery_date, "grand_total": n.grand_total, "status": n.status, "docstatus": n.docstatus} for n in names]
+    out = [{"name": n.name, "customer": n.customer, "customer_name": n.customer_name, "transaction_date": n.transaction_date, "delivery_date": n.delivery_date, "grand_total": n.grand_total, "status": n.status, "docstatus": n.docstatus, "po_no": getattr(n, "po_no", None)} for n in names]
     return {"status_code": 200, "count": len(out), "total_count": total_count, "sales_orders": out}
 
 
@@ -2433,6 +2433,8 @@ def create_sales_order():
             doc.transaction_date = data["transaction_date"]
         if data.get("delivery_date"):
             doc.delivery_date = data["delivery_date"]
+        if data.get("po_no") is not None:
+            doc.po_no = (data.get("po_no") or "").strip() or None
         for row in items:
             doc.append("items", {
                 "item_code": row.get("item_code"),
@@ -2689,6 +2691,8 @@ def update_sales_order():
             doc.transaction_date = data.get("transaction_date")
         if data.get("delivery_date"):
             doc.delivery_date = data.get("delivery_date")
+        if "po_no" in data:
+            doc.po_no = (data.get("po_no") or "").strip() or None
         
         # Add sales person to sales_team if not already present
         sales_person = _get_user_sales_person()

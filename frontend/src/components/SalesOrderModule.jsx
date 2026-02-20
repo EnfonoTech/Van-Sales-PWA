@@ -71,6 +71,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
   const [errorDialog, setErrorDialog] = useState({ isOpen: false, title: '', message: '' });
 
   const [deliveryDate, setDeliveryDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [poNo, setPoNo] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [orderDetail, setOrderDetail] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -478,7 +479,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
       if (orderDoc.delivery_date) {
         setDeliveryDate(new Date(orderDoc.delivery_date).toISOString().split('T')[0]);
       }
-      
+      setPoNo(orderDoc.po_no || '');
       setEditingSalesOrder(doc.name);
       setView('create');
     } catch (error) {
@@ -624,6 +625,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
           items: formattedItems,
           delivery_date: deliveryDate || undefined,
           discount_amount: getDiscountValue(discountAmount),
+          po_no: poNo || undefined,
         });
         orderName = editingSalesOrder;
       } else {
@@ -632,6 +634,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
           customer: customer.name,
           items: formattedItems,
           delivery_date: deliveryDate || undefined,
+          po_no: poNo || undefined,
         });
         orderName = result.name || result.message?.name;
       }
@@ -653,6 +656,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
       setLineItems([]);
       setDiscountAmount('0');
       setDeliveryDate(new Date().toISOString().split('T')[0]);
+      setPoNo('');
       setEditingSalesOrder(null);
     } catch (err) {
       console.error('Error creating/updating sales order:', err);
@@ -801,6 +805,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
         onBack={() => setView('list')}
         partyLabel="Customer Information"
         partyName={doc?.customer_name || doc?.customer}
+        partySubtitle={doc?.po_no ? `PO No: ${doc.po_no}` : undefined}
         items={doc?.items || []}
         subtotal={doc?.net_total}
         discount={doc?.discount_amount}
@@ -879,6 +884,16 @@ function SalesOrderModule({ customers = [], items = [] }) {
                 required
               />
             </div>
+            <div className="form-group mt-4">
+              <label className="form-label">PO No</label>
+              <input
+                type="text"
+                className="form-input"
+                value={poNo}
+                onChange={(e) => setPoNo(e.target.value)}
+                placeholder="Purchase order number"
+              />
+            </div>
           </>
         )}
       </div>
@@ -941,7 +956,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
       <TransactionFormLayout
         title={editingSalesOrder ? `Edit Sales Order ${editingSalesOrder}` : "New Sales Order"}
         backLabel="Back to Sales Orders"
-        onBack={() => { setView('list'); setLineItems([]); setSelectedCustomer(''); setCustomerSearch(''); setDiscountAmount('0'); setDeliveryDate(new Date().toISOString().split('T')[0]); setEditingSalesOrder(null); }}
+        onBack={() => { setView('list'); setLineItems([]); setSelectedCustomer(''); setCustomerSearch(''); setDiscountAmount('0'); setDeliveryDate(new Date().toISOString().split('T')[0]); setPoNo(''); setEditingSalesOrder(null); }}
         partySelection={partySelection}
         addItemsSection={addItemsSection}
         lineItems={lineItems}
