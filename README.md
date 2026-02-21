@@ -25,6 +25,10 @@ bench build --app fateh_pwa
 
 **Run PWA:** Open **`/pwa`** on your site (redirects to the PWA) or `/assets/fateh_pwa/pwa/index.html`.
 
+**User guide & testing:** See [docs/USER_GUIDE_AND_TESTING.md](docs/USER_GUIDE_AND_TESTING.md) for an end-user perspective and step-by-step how to test each area (login, dashboard, customers, sales, quotations, sales orders, returns, payments, stock, leads).
+
+**ERPNext setup & permissions:** See [docs/ERPNEXT_SETUP_AND_PERMISSIONS.md](docs/ERPNEXT_SETUP_AND_PERMISSIONS.md) for production setup: User → Employee → Sales Person (so users see assigned customers), permissions, Warehouse User Permission, and all custom fields required (Customer, Address, Quotation, Sales Invoice, Sales Return).
+
 **Development:** Run `npm run dev` from `apps/fateh_pwa` to start the Vite dev server (proxies `/api` to bench).
 
 ### Installation
