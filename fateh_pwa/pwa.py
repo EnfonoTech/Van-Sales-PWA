@@ -3072,13 +3072,24 @@ def create_sales_invoice():
             doc.apply_discount_on = data.get("apply_discount_on", "Grand Total")
 
         doc.set_missing_values()
-        
+
+        # Force user's cost center after set_missing_values.
+        # When is_pos=1, set_pos_fields() unconditionally sets doc.cost_center from the
+        # POS Profile (e.g. 'new - T'), then propagates it to items and taxes.
+        # We override all three levels here so the invoice is always saved with the
+        # user's permitted cost center.
+        doc.cost_center = cost_center
+        for item_row in doc.items:
+            item_row.cost_center = cost_center
+        for tax_row in doc.taxes:
+            tax_row.cost_center = cost_center
+
         # Force set dates: posting_date = today, due_date = today+1 AFTER set_missing_values to override any frontend values
         tomorrow_date = add_days(getdate(today()), 1)
         doc.posting_date = getdate(today())
         doc.posting_time = nowtime()
         doc.due_date = tomorrow_date
-        
+
         doc.calculate_taxes_and_totals()
 
         # Re-apply payments after calculate_taxes_and_totals so they are never cleared by hooks/set_missing_values
@@ -3507,6 +3518,15 @@ def update_sales_invoice():
         # SAVE
         # --------------------------------------------------
         doc.set_missing_values()
+
+        # Force user's cost center after set_missing_values (POS Profile override — same as create)
+        if update_cost_center:
+            doc.cost_center = update_cost_center
+            for item_row in doc.items:
+                item_row.cost_center = update_cost_center
+            for tax_row in doc.taxes:
+                tax_row.cost_center = update_cost_center
+
         doc.calculate_taxes_and_totals()
         
         # If payments are provided, update payment amounts to match final grand_total
