@@ -2315,6 +2315,22 @@ export const getPaymentMethods = async () => {
   }
 };
 
+/**
+ * Get default tax template info (rate + included_in_print_rate) for the current user's company.
+ * @returns {Promise<{template: string|null, rate: number, included_in_print_rate: boolean, taxes: Array}>}
+ */
+export const getTaxTemplateInfo = async () => {
+  try {
+    const response = await apiRequest('/method/fateh_pwa.pwa.get_tax_template_info', { method: 'GET' });
+    const msg = response?.message;
+    if (msg?.data) return msg.data;
+    return { template: null, rate: 15, included_in_print_rate: false, taxes: [] };
+  } catch (error) {
+    console.warn('getTaxTemplateInfo failed:', error);
+    return { template: null, rate: 15, included_in_print_rate: false, taxes: [] };
+  }
+};
+
 export default {
   // Authentication
   login,
@@ -2335,6 +2351,8 @@ export default {
   getCustomerAddresses,
   updateCustomerAddress,
   deleteCustomerAddress,
+  // Tax
+  getTaxTemplateInfo,
   // Sales Invoices
   createSalesInvoice,
   getSalesInvoiceList,

@@ -415,8 +415,12 @@ def get_items_list():
             filters["disabled"] = cint(disabled)
 
         search = frappe.form_dict.get("search")
+        or_filters = None
         if search:
-            filters["item_code"] = ["like", f"%{search}%"]
+            or_filters = [
+                ["item_code", "like", f"%{search}%"],
+                ["item_name", "like", f"%{search}%"],
+            ]
 
         limit = cint(frappe.form_dict.get("limit", 20))
         offset = cint(frappe.form_dict.get("offset", 0))
@@ -427,6 +431,7 @@ def get_items_list():
         items = frappe.get_all(
             "Item",
             filters=filters,
+            or_filters=or_filters or [],
             fields=[
                 "name",
                 "item_code",
@@ -453,7 +458,10 @@ def get_items_list():
         # (price list + optional customer). No per-UOM rates attached here; frontend uses
         # standard_rate/valuation_rate for list display only.
 
-        total_count = frappe.db.count("Item", filters=filters)
+        if or_filters:
+            total_count = len(frappe.get_all("Item", filters=filters, or_filters=or_filters, fields=["name"], limit_page_length=0))
+        else:
+            total_count = frappe.db.count("Item", filters=filters)
 
         return {
             "status": "success",
@@ -702,11 +710,13 @@ def get_items_list():
 def get_item_details():
     """
     Frontend sends:
-        ?item_code=XXX  (customer optional; not used for price lookup)
+        ?item_code=XXX  (customer optional)
 
-    Backend:
-        - Price from Price List (Standard Selling) only; does NOT use customer in Item Price.
-        - Stock from Item Default warehouse, else all warehouses.
+    Price list resolution priority:
+      1. User Permission on 'Price List' for the logged-in user
+      2. Customer's default_price_list (if customer param provided)
+      3. Selling Settings default selling_price_list
+      4. First enabled selling Price List
     """
 
     try:
@@ -747,6 +757,11 @@ def get_item_details():
                 )
 
         item = frappe.get_doc("Item", item_code)
+
+        # ------------------------------------------------
+        # RESOLVE PRICE LIST
+        # ------------------------------------------------
+        price_list = _get_price_list(customer)
 
         # ------------------------------------------------
         # WAREHOUSE → ITEM DEFAULT, ELSE ALL
@@ -802,13 +817,13 @@ def get_item_details():
                 )
 
         # ------------------------------------------------
-        # ITEM PRICES (FROM PRICE LIST ONLY – NO CUSTOMER)
+        # ITEM PRICES (resolved price list, no customer filter)
         # ------------------------------------------------
         item_prices = frappe.get_all(
             "Item Price",
             filters=[
                 ["item_code", "=", item_code],
-                ["price_list", "=", "Standard Selling"],
+                ["price_list", "=", price_list],
                 ["customer", "is", "not set"],
             ],
             fields=[
@@ -827,17 +842,17 @@ def get_item_details():
         )
 
         # ------------------------------------------------
-        # RATES FROM PRICE LIST ONLY (no customer in Item Price)
+        # RATES PER UOM FROM RESOLVED PRICE LIST
         # ------------------------------------------------
         rates = {}
         for uom in uoms:
             rate = None
-            # Item Price: price_list + item + uom, customer not set (blank)
+            # 1. Price list rate for this UOM (no customer)
             price_row = frappe.get_all(
                 "Item Price",
                 filters=[
                     ["item_code", "=", item_code],
-                    ["price_list", "=", "Standard Selling"],
+                    ["price_list", "=", price_list],
                     ["uom", "=", uom],
                     ["customer", "is", "not set"],
                 ],
@@ -865,6 +880,7 @@ def get_item_details():
         return {
             "status": "success",
             "warehouse": warehouse,
+            "price_list": price_list,
             "customer": {
                 "input": customer_param,
                 "customer_id": customer
@@ -882,6 +898,7 @@ def get_item_details():
                 "standard_rate": standard_rate,
                 "disabled": item.disabled,
 
+                "price_list": price_list,
                 "rates": rates,
                 "uom_conversions": uom_conversions,
                 "stock_levels": stock_levels,
@@ -1187,6 +1204,45 @@ def _get_user_company():
         return company
     company = frappe.defaults.get_user_default("Company")
     return company
+
+
+def _get_price_list(customer=None):
+    """
+    Resolve the selling price list for the current user.
+    Priority:
+      1. User Permission on 'Price List' for the logged-in user
+      2. Customer's default_price_list (if customer provided)
+      3. Selling Settings default selling_price_list
+      4. First enabled selling Price List
+    """
+    user = frappe.session.user
+
+    # 1. User Permission for Price List
+    user_price_list = frappe.db.get_value(
+        "User Permission",
+        {"user": user, "allow": "Price List"},
+        "for_value"
+    )
+    if user_price_list:
+        return user_price_list
+
+    # 2. Customer's default price list
+    if customer:
+        customer_price_list = frappe.db.get_value("Customer", customer, "default_price_list")
+        if customer_price_list:
+            return customer_price_list
+
+    # 3. Selling Settings default
+    try:
+        default_price_list = frappe.db.get_single_value("Selling Settings", "selling_price_list")
+        if default_price_list:
+            return default_price_list
+    except Exception:
+        pass
+
+    # 4. First enabled selling Price List
+    first_price_list = frappe.db.get_value("Price List", {"selling": 1, "enabled": 1}, "name")
+    return first_price_list or "Standard Selling"
 
 
 def _get_user_sales_person():
@@ -2208,9 +2264,10 @@ def create_quotation():
             "account_head": t.account_head,
             "description": t.description or f"Tax @ {t.rate}%",
             "rate": t.rate,
-            "cost_center": cost_center
+            "cost_center": cost_center,
+            "included_in_print_rate": t.included_in_print_rate
         } for t in tpl.taxes]
-        
+
         doc = frappe.new_doc("Quotation")
         doc.quotation_to = quotation_to
         doc.party_name = party_name
@@ -2423,9 +2480,10 @@ def create_sales_order():
             "account_head": t.account_head,
             "description": t.description or f"Tax @ {t.rate}%",
             "rate": t.rate,
-            "cost_center": cost_center
+            "cost_center": cost_center,
+            "included_in_print_rate": t.included_in_print_rate
         } for t in tpl.taxes]
-        
+
         doc = frappe.new_doc("Sales Order")
         doc.customer = customer
         doc.company = company
@@ -2990,7 +3048,8 @@ def create_sales_invoice():
             "account_head": t.account_head,
             "description": t.description,
             "rate": t.rate,
-            "cost_center": cost_center
+            "cost_center": cost_center,
+            "included_in_print_rate": t.included_in_print_rate
         } for t in tpl.taxes]
 
         # --------------------------------------------------
@@ -3232,7 +3291,8 @@ def get_invoice_details():
                 "charge_type": tax.charge_type,
                 "account_head": tax.account_head,
                 "rate": tax.rate,
-                "tax_amount": tax.tax_amount
+                "tax_amount": tax.tax_amount,
+                "included_in_print_rate": tax.included_in_print_rate
             })
 
         # -------------------------
@@ -3483,7 +3543,8 @@ def update_sales_invoice():
                         "account_head": t.account_head,
                         "description": t.description,
                         "rate": t.rate,
-                        "cost_center": update_cost_center
+                        "cost_center": update_cost_center,
+                        "included_in_print_rate": t.included_in_print_rate
                     })
                 doc.taxes_and_charges = tax_template
 
@@ -5147,7 +5208,8 @@ def create_sales_return():
                 "account_head": orig_tax.account_head,
                 "description": orig_tax.description,
                 "rate": orig_tax.rate,
-                "cost_center": orig_tax.cost_center
+                "cost_center": orig_tax.cost_center,
+                "included_in_print_rate": orig_tax.included_in_print_rate
             })
         
         # Create return invoice
@@ -5881,3 +5943,54 @@ def get_stock_balance():
             "status": "error",
             "message": str(e)
         }
+
+
+@frappe.whitelist(allow_guest=False, methods=["GET"])
+def get_tax_template_info():
+    """
+    Returns the default tax template's rate and included_in_print_rate for the current user's company.
+    Used by the frontend to calculate and display taxes correctly during data entry.
+    """
+    try:
+        company = _get_user_company()
+
+        if not company:
+            return {"status": "error", "message": "Could not determine company for this user"}
+
+        tax_template = frappe.db.get_value(
+            "Sales Taxes and Charges Template",
+            {"company": company, "is_default": 1, "disabled": 0},
+            "name"
+        )
+
+        if not tax_template:
+            return {
+                "status": "success",
+                "data": {"template": None, "rate": 0, "included_in_print_rate": False, "taxes": []}
+            }
+
+        tpl = frappe.get_doc("Sales Taxes and Charges Template", tax_template)
+        taxes = [{
+            "rate": t.rate,
+            "included_in_print_rate": bool(t.included_in_print_rate),
+            "description": t.description or f"Tax @ {t.rate}%",
+            "charge_type": t.charge_type,
+            "account_head": t.account_head
+        } for t in tpl.taxes]
+
+        total_rate = sum(t.rate for t in tpl.taxes)
+        all_included = bool(tpl.taxes) and all(t.included_in_print_rate for t in tpl.taxes)
+
+        return {
+            "status": "success",
+            "data": {
+                "template": tax_template,
+                "rate": total_rate,
+                "included_in_print_rate": all_included,
+                "taxes": taxes
+            }
+        }
+
+    except Exception as e:
+        frappe.log_error("Get Tax Template Info Error", frappe.get_traceback())
+        return {"status": "error", "message": str(e)}

@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Plus, Search, Trash2, Save, Loader2, Check } from 'lucide-react';
-import { getItemPrice, searchItems, createSalesInvoice, updateSalesInvoice, getInvoiceDetails, getItemDetails, submitSalesInvoice, createCustomer, getSalesInvoiceList, getPaymentMethods, openPrintPdf } from '../services/api';
+import { getItemPrice, searchItems, createSalesInvoice, updateSalesInvoice, getInvoiceDetails, getItemDetails, submitSalesInvoice, createCustomer, getSalesInvoiceList, getPaymentMethods, getTaxTemplateInfo, openPrintPdf } from '../services/api';
 import SARSymbol from './SARSymbol';
 import ErrorDialog from './ErrorDialog';
 import ConfirmationDialog from './ConfirmationDialog';
@@ -41,6 +41,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
   const [submittingQuickCustomer, setSubmittingQuickCustomer] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
+  const [taxInfo, setTaxInfo] = useState({ rate: 15, included_in_print_rate: false });
   const itemDropdownRef = useRef(null);
   const [errorDialog, setErrorDialog] = useState({ isOpen: false, title: '', message: '' });
   const [confirmationDialog, setConfirmationDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null, onCancel: null });
@@ -208,6 +209,9 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         setPaymentMethods(list);
       }
     }).catch(() => setPaymentMethods([]));
+    getTaxTemplateInfo().then((info) => {
+      if (info && typeof info.rate === 'number') setTaxInfo(info);
+    }).catch(() => {});
   }, []);
 
   // Filter customers based on search query (only show dropdown when no customer selected)
@@ -726,14 +730,22 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
   };
 
   const calculateTax = () => {
-    return calculateSubtotal() * 0.15; // 15% VAT on subtotal (before discount)
+    const subtotal = calculateSubtotal();
+    if (taxInfo.included_in_print_rate) {
+      // Tax is baked into the item price; extract it from the subtotal
+      return subtotal - subtotal / (1 + taxInfo.rate / 100);
+    }
+    return subtotal * (taxInfo.rate / 100);
   };
 
   const calculateTotal = () => {
     const subtotal = calculateSubtotal();
-    const tax = calculateTax();
     const discount = calculateDiscount();
-    return Math.max(subtotal + tax - discount, 0); // Discount applied to total (after tax)
+    if (taxInfo.included_in_print_rate) {
+      // Tax is already included in prices; total is just subtotal minus discount
+      return Math.max(subtotal - discount, 0);
+    }
+    return Math.max(subtotal + calculateTax() - discount, 0);
   };
 
   const handleEditInvoice = async () => {
@@ -1699,7 +1711,7 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                           </td>
                         </tr>
                         <tr>
-                          <td colSpan="5" className="text-right font-bold">Tax (15%):</td>
+                          <td colSpan="5" className="text-right font-bold">Tax ({taxInfo.rate}%):</td>
                           <td colSpan="2" className="font-bold"><SARSymbol size={16} /> {calculateTax().toFixed(2)}</td>
                         </tr>
                         <tr style={{ borderTop: '2px solid var(--primary)' }}>
@@ -1911,7 +1923,7 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                       </tr>
                     )}
                     <tr>
-                      <td colSpan="5" className="text-right">Tax (15%):</td>
+                      <td colSpan="5" className="text-right">Tax ({taxInfo.rate}%):</td>
                       <td colSpan="2"><SARSymbol size={16} /> {(invoice.tax || invoice.total_taxes_and_charges || 0).toFixed(2)}</td>
                     </tr>
                     <tr style={{ borderTop: '2px solid var(--primary)' }}>

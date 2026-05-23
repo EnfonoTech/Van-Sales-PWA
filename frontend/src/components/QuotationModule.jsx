@@ -17,6 +17,7 @@ import {
   getItemDetails,
   searchItems,
   convertQuotationToSalesOrder,
+  getTaxTemplateInfo,
 } from '../services/api';
 import SARSymbol from './SARSymbol';
 import TransactionFormLayout from './TransactionFormLayout';
@@ -96,6 +97,7 @@ function QuotationModule({ customers = [], items = [] }) {
   const [submittingQuickLead, setSubmittingQuickLead] = useState(false);
   const [errorDialog, setErrorDialog] = useState({ isOpen: false, title: '', message: '' });
   const [confirmationDialog, setConfirmationDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null, onCancel: null });
+  const [taxInfo, setTaxInfo] = useState({ rate: 15, included_in_print_rate: false });
 
   const getPriceValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) >= 0 ? parseFloat(v) : 0);
   const getQuantityValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) > 0 ? parseFloat(v) : 1);
@@ -115,8 +117,21 @@ function QuotationModule({ customers = [], items = [] }) {
   const calculateSubtotal = () =>
     lineItems.reduce((sum, item) => sum + getPriceValue(item.price) * getQuantityValue(item.quantity), 0);
   const calculateDiscount = () => getDiscountValue(discountAmount);
-  const calculateTax = () => calculateSubtotal() * 0.15;
-  const calculateTotal = () => Math.max(calculateSubtotal() + calculateTax() - calculateDiscount(), 0);
+  const calculateTax = () => {
+    const subtotal = calculateSubtotal();
+    if (taxInfo.included_in_print_rate) {
+      return subtotal - subtotal / (1 + taxInfo.rate / 100);
+    }
+    return subtotal * (taxInfo.rate / 100);
+  };
+  const calculateTotal = () => {
+    const subtotal = calculateSubtotal();
+    const discount = calculateDiscount();
+    if (taxInfo.included_in_print_rate) {
+      return Math.max(subtotal - discount, 0);
+    }
+    return Math.max(subtotal + calculateTax() - discount, 0);
+  };
 
   const hasParty = quotationTo === 'Customer' ? !!selectedCustomer : !!selectedLeadName;
   const partyNameForApi =
@@ -136,7 +151,12 @@ function QuotationModule({ customers = [], items = [] }) {
     }
   };
 
-  useEffect(() => { fetchList(); }, []);
+  useEffect(() => {
+    fetchList();
+    getTaxTemplateInfo().then((info) => {
+      if (info && typeof info.rate === 'number') setTaxInfo(info);
+    }).catch(() => {});
+  }, []);
 
   // Handle name query parameter to show detail view
   useEffect(() => {
@@ -1409,6 +1429,7 @@ function QuotationModule({ customers = [], items = [] }) {
         submitting={submitting}
         submitLabel="Save Quotation"
         disabledSubmit={loadingItem}
+        taxLabel={`Tax (${taxInfo.rate}%):`}
       />
       {errorDialogElement}
       </>

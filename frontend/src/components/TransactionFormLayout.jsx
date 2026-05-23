@@ -52,6 +52,7 @@ export function TransactionFormLayout({
   submitting,
   submitLabel = 'Save',
   disabledSubmit,
+  taxLabel = 'Tax:',
 }) {
   const getPrice = (v) => (typeof getPriceValue === 'function' ? getPriceValue(v) : parseFloat(v) || 0);
   const getQty = (v) => (typeof getQuantityValue === 'function' ? getQuantityValue(v) : parseFloat(v) || 1);
@@ -182,7 +183,7 @@ export function TransactionFormLayout({
                     </td>
                   </tr>
                   <tr>
-                    <td colSpan="5" className="text-right font-bold">Tax (15%):</td>
+                    <td colSpan="5" className="text-right font-bold">{taxLabel}</td>
                     <td colSpan="2" className="font-bold">
                       <SARSymbol size={16} /> {((typeof calculateTax === 'function' ? calculateTax() : 0)).toFixed(2)}
                     </td>
