@@ -13,7 +13,7 @@ const base = '/assets/fateh_pwa/pwa/';
 export default defineConfig(({ mode }) => ({
   base,
   define: {
-    'import.meta.env.VITE_APP_BASE_PATH': JSON.stringify('/assets/fateh_pwa/pwa'),
+    'import.meta.env.VITE_APP_BASE_PATH': JSON.stringify('/pwa'),
   },
   build: {
     outDir,
@@ -51,6 +51,7 @@ export default defineConfig(({ mode }) => ({
     react(),
     VitePWA({
       registerType: 'prompt',
+      injectRegister: false,
       includeAssets: ['icon.png', 'icon-192x192.png', 'icon-512x512.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'FATEH',
@@ -60,8 +61,8 @@ export default defineConfig(({ mode }) => ({
         background_color: '#3b82f6',
         display: 'standalone',
         orientation: 'any',
-        scope: '/',
-        start_url: '/',
+        scope: '/pwa',
+        start_url: '/pwa',
         icons: [
           { src: '/assets/fateh_pwa/pwa/icon-72x72.png', sizes: '72x72', type: 'image/png', purpose: 'any' },
           { src: '/assets/fateh_pwa/pwa/icon-96x96.png', sizes: '96x96', type: 'image/png', purpose: 'any' },
@@ -73,9 +74,9 @@ export default defineConfig(({ mode }) => ({
           { src: '/assets/fateh_pwa/pwa/icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
         ],
         shortcuts: [
-          { name: 'New Sale', short_name: 'Sale', description: 'Create a new sales invoice', url: '/?view=sales', icons: [{ src: '/assets/fateh_pwa/pwa/icon-192x192.png', sizes: '192x192' }] },
-          { name: 'Collect Payment', short_name: 'Payment', description: 'Collect a payment', url: '/?view=payments', icons: [{ src: '/assets/fateh_pwa/pwa/icon-192x192.png', sizes: '192x192' }] },
-          { name: 'View Stock', short_name: 'Stock', description: 'Check stock levels', url: '/?view=stock', icons: [{ src: '/assets/fateh_pwa/pwa/icon-192x192.png', sizes: '192x192' }] },
+          { name: 'New Sale', short_name: 'Sale', description: 'Create a new sales invoice', url: '/pwa?view=sales', icons: [{ src: '/assets/fateh_pwa/pwa/icon-192x192.png', sizes: '192x192' }] },
+          { name: 'Collect Payment', short_name: 'Payment', description: 'Collect a payment', url: '/pwa?view=payments', icons: [{ src: '/assets/fateh_pwa/pwa/icon-192x192.png', sizes: '192x192' }] },
+          { name: 'View Stock', short_name: 'Stock', description: 'Check stock levels', url: '/pwa?view=stock', icons: [{ src: '/assets/fateh_pwa/pwa/icon-192x192.png', sizes: '192x192' }] },
         ],
       },
       workbox: {
