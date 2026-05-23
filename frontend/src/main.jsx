@@ -1,37 +1,33 @@
 import { createRoot } from 'react-dom/client'
 import React from 'react';
-import { registerSW } from 'virtual:pwa-register';
 import './index.css'
 import App from './App.jsx'
 
-// Register service worker only in production
-// In development, unregister any existing service workers to avoid conflicts with proxy
-if (import.meta.env.PROD) {
-  const updateSW = registerSW({
-    onNeedRefresh() {
-      // Show update notification
-      if (confirm('New version available! Click OK to update.')) {
-        updateSW(true);
-      }
-    },
-    onOfflineReady() {
-    },
-    onRegistered(registration) {
-    },
-    onRegisterError(error) {
-      console.error('Service Worker registration error:', error);
-    }
+// Register service worker with explicit scope /pwa.
+// The Frappe after_request hook adds Service-Worker-Allowed: /pwa so this is permitted.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/assets/fateh_pwa/pwa/sw.js', { scope: '/pwa' })
+      .then((registration) => {
+        registration.onupdatefound = () => {
+          const installing = registration.installing;
+          if (!installing) return;
+          installing.onstatechange = () => {
+            if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+              if (confirm('New version available! Click OK to update.')) {
+                window.location.reload();
+              }
+            }
+          };
+        };
+      })
+      .catch((err) => console.error('Service Worker registration error:', err));
   });
-} else {
-  // In development, unregister any existing service workers
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.getRegistrations().then(registrations => {
-      registrations.forEach(registration => {
-        registration.unregister().then(() => {
-        });
-      });
-    });
-  }
+} else if (!import.meta.env.PROD && 'serviceWorker' in navigator) {
+  // In development, unregister stale service workers
+  navigator.serviceWorker.getRegistrations().then((regs) => {
+    regs.forEach((r) => r.unregister());
+  });
 }
 
 import { BrowserRouter } from 'react-router-dom'

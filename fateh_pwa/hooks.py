@@ -5,12 +5,13 @@ app_description = "PWA for Sales"
 app_email = "ramees@enfono.com"
 app_license = "mit"
 
-# PWA entry: /pwa redirects to the built SPA
-# /pwa/login also redirects to the app (app routing will handle showing login page)
-website_redirects = [
-    {"source": "/pwa", "target": "/assets/fateh_pwa/pwa/index.html"},
-    {"source": "/pwa/login", "target": "/assets/fateh_pwa/pwa/index.html"},
+# Serve the PWA SPA at /pwa; all sub-paths are handled by React Router client-side
+website_route_rules = [
+    {"from_route": "/pwa/<path:subpath>", "to_route": "pwa"},
 ]
+
+# Add Service-Worker-Allowed header so the SW can cover scope /pwa
+after_request = ["fateh_pwa.utils.after_request"]
 
 # Apps
 # ------------------
