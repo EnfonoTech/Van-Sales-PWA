@@ -1742,7 +1742,7 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                           <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right font-bold">Subtotal:</td>
                           <td colSpan="2" className="font-bold"><SARSymbol size={16} /> {calculateSubtotal().toFixed(2)}</td>
                         </tr>
-                        <tr style={{ display: 'none' }}>
+                        <tr>
                           <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right font-bold">Discount:</td>
                           <td colSpan="2" style={{ padding: '8px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-start' }}>
@@ -1980,7 +1980,7 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                       </td>
                     </tr>
                     {invoice.discount > 0 && (
-                      <tr style={{ display: 'none' }}>
+                      <tr>
                         <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right">Discount:</td>
                         <td colSpan="2"><SARSymbol size={16} /> {(invoice.discount || 0).toFixed(2)}</td>
                       </tr>
