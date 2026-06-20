@@ -38,6 +38,7 @@ export function TransactionFormLayout({
   getPriceValue,
   getQuantityValue,
   onUpdatePrice,
+  onExclusiveRateChange,
   onUpdateQuantity,
   onUpdateUOM,
   onPriceBlur,
@@ -53,6 +54,8 @@ export function TransactionFormLayout({
   submitLabel = 'Save',
   disabledSubmit,
   taxLabel = 'Tax:',
+  taxInfo = { rate: 15, included_in_print_rate: false },
+  taxExclusiveEnabled = false,
 }) {
   const getPrice = (v) => (typeof getPriceValue === 'function' ? getPriceValue(v) : parseFloat(v) || 0);
   const getQty = (v) => (typeof getQuantityValue === 'function' ? getQuantityValue(v) : parseFloat(v) || 1);
@@ -90,7 +93,8 @@ export function TransactionFormLayout({
                   <tr>
                     <th>Code</th>
                     <th>Item Name</th>
-                    <th>Price</th>
+                    {taxExclusiveEnabled && <th>Excl. Rate</th>}
+                    <th>Rate</th>
                     <th>Qty</th>
                     <th>UOM</th>
                     <th>Total</th>
@@ -106,17 +110,38 @@ export function TransactionFormLayout({
                       <tr key={item.code}>
                         <td className="font-semibold">{item.code}</td>
                         <td>{item.name}</td>
+                        {taxExclusiveEnabled && (
+                          <td>
+                            {item.tax_exclusive ? (
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                className="form-input"
+                                value={item.tax_exclusive_rate ?? ''}
+                                onChange={(e) => onExclusiveRateChange?.(item.code, e.target.value)}
+                                placeholder="0.00"
+                                style={{ width: '100px' }}
+                              />
+                            ) : (
+                              <span style={{ color: '#bbb', textAlign: 'center', display: 'block' }}>—</span>
+                            )}
+                          </td>
+                        )}
                         <td>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            className="form-input"
-                            value={item.price}
-                            onChange={(e) => onUpdatePrice(item.code, e.target.value)}
-                            onBlur={() => onPriceBlur?.(item.code)}
-                            placeholder="0.00"
-                            style={{ width: '110px' }}
-                          />
+                          {taxExclusiveEnabled && item.tax_exclusive ? (
+                            <span style={{ display: 'block', width: '100px', padding: '6px 8px' }}>{parseFloat(item.price).toFixed(2)}</span>
+                          ) : (
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              className="form-input"
+                              value={item.price}
+                              onChange={(e) => onUpdatePrice(item.code, e.target.value)}
+                              onBlur={() => onPriceBlur?.(item.code)}
+                              placeholder="0.00"
+                              style={{ width: '100px' }}
+                            />
+                          )}
                         </td>
                         <td>
                           <input
@@ -159,13 +184,13 @@ export function TransactionFormLayout({
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colSpan="5" className="text-right font-bold">Subtotal:</td>
+                    <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right font-bold">Subtotal:</td>
                     <td colSpan="2" className="font-bold">
                       <SARSymbol size={16} /> {((typeof calculateSubtotal === 'function' ? calculateSubtotal() : 0)).toFixed(2)}
                     </td>
                   </tr>
-                  <tr>
-                    <td colSpan="5" className="text-right font-bold">Discount:</td>
+                  <tr style={{ display: 'none' }}>
+                    <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right font-bold">Discount:</td>
                     <td colSpan="2" style={{ padding: '8px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <span style={{ color: 'var(--gray-600)' }}>-</span>
@@ -183,13 +208,13 @@ export function TransactionFormLayout({
                     </td>
                   </tr>
                   <tr>
-                    <td colSpan="5" className="text-right font-bold">{taxLabel}</td>
+                    <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right font-bold">{taxLabel}</td>
                     <td colSpan="2" className="font-bold">
                       <SARSymbol size={16} /> {((typeof calculateTax === 'function' ? calculateTax() : 0)).toFixed(2)}
                     </td>
                   </tr>
                   <tr style={{ borderTop: '2px solid var(--primary)' }}>
-                    <td colSpan="5" className="text-right font-bold" style={{ fontSize: '1.125rem' }}>TOTAL:</td>
+                    <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right font-bold" style={{ fontSize: '1.125rem' }}>TOTAL:</td>
                     <td colSpan="2" className="font-bold" style={{ fontSize: '1.25rem', color: 'var(--primary)' }}>
                       <SARSymbol size={16} /> {((typeof calculateTotal === 'function' ? calculateTotal() : 0)).toFixed(2)}
                     </td>

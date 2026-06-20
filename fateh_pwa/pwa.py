@@ -444,6 +444,7 @@ def get_items_list():
                 "is_sales_item",
                 "valuation_rate",
                 "standard_rate",
+                "tax_exclusive",
                 "image",
                 "disabled",
                 "creation",
@@ -906,6 +907,9 @@ def get_item_details():
                     {**ip, "price_list_rate": flt(ip.get("price_list_rate"), 2)}
                     for ip in (item_prices or [])
                 ],
+
+                "tax_exclusive": cint(item.get("tax_exclusive") or 0),
+                "tax_exclusive_rate": flt(item.get("tax_exclusive_rate") or 0, 2),
 
                 "creation": str(item.creation),
                 "modified": str(item.modified)
@@ -2662,24 +2666,29 @@ def update_quotation():
                 if not frappe.db.exists("Lead", party_name):
                     return {"status": "error", "message": f"Lead '{party_name}' not found"}
             doc.party_name = party_name
-        
+
         # Update items
         if data.get("items"):
             doc.set("items", [])
+            _q_has_tex = frappe.db.has_column("Quotation Item", "tax_exclusive")
             for item in data.get("items"):
                 if not item.get("item_code"):
                     continue
-                doc.append("items", {
+                row = {
                     "item_code": item.get("item_code"),
                     "qty": flt(item.get("qty", 1)),
                     "rate": flt(item.get("rate", 0), 2),
                     "uom": item.get("uom", "Nos"),
-                })
-        
+                }
+                if _q_has_tex:
+                    row["tax_exclusive"] = cint(item.get("tax_exclusive") or 0)
+                    row["tax_exclusive_rate"] = flt(item.get("tax_exclusive_rate") or 0, 2)
+                doc.append("items", row)
+
         # Update discount
         if "discount_amount" in data:
             doc.discount_amount = flt(data.get("discount_amount"))
-        
+
         # Update dates
         if data.get("transaction_date"):
             doc.transaction_date = data.get("transaction_date")
@@ -2726,20 +2735,25 @@ def update_sales_order():
             if not frappe.db.exists("Customer", customer_param):
                 return {"status": "error", "message": f"Customer '{customer_param}' not found"}
             doc.customer = customer_param
-        
+
         # Update items
         if data.get("items"):
             doc.set("items", [])
+            _so_has_tex = frappe.db.has_column("Sales Order Item", "tax_exclusive")
             for item in data.get("items"):
                 if not item.get("item_code"):
                     continue
-                doc.append("items", {
+                row = {
                     "item_code": item.get("item_code"),
                     "qty": flt(item.get("qty", 1)),
                     "rate": flt(item.get("rate", 0), 2),
                     "uom": item.get("uom", "Nos"),
-                })
-        
+                }
+                if _so_has_tex:
+                    row["tax_exclusive"] = cint(item.get("tax_exclusive") or 0)
+                    row["tax_exclusive_rate"] = flt(item.get("tax_exclusive_rate") or 0, 2)
+                doc.append("items", row)
+
         # Update discount
         if "discount_amount" in data:
             doc.discount_amount = flt(data.get("discount_amount"))
@@ -3019,6 +3033,8 @@ def create_sales_invoice():
                 "income_account": company_doc.default_income_account,
                 "cost_center": cost_center,
                 "warehouse": warehouse_for_items,
+                "tax_exclusive": cint(item.get("tax_exclusive") or 0),
+                "tax_exclusive_rate": flt(item.get("tax_exclusive_rate") or 0, 2),
             }
 
             invoice_items.append(row)
@@ -3278,7 +3294,9 @@ def get_invoice_details():
 
                 "rate": item.rate,
                 "amount": item.amount,
-                "warehouse": item.warehouse
+                "warehouse": item.warehouse,
+                "tax_exclusive": cint(item.get("tax_exclusive") or 0),
+                "tax_exclusive_rate": flt(item.get("tax_exclusive_rate") or 0, 2),
             })
 
         # -------------------------
@@ -3519,7 +3537,9 @@ def update_sales_invoice():
                     "rate": flt(item.get("rate", 0), 2),
                     "uom": item.get("uom", "Nos"),
                     "income_account": company_doc.default_income_account,
-                    "cost_center": update_cost_center
+                    "cost_center": update_cost_center,
+                    "tax_exclusive": cint(item.get("tax_exclusive") or 0),
+                    "tax_exclusive_rate": flt(item.get("tax_exclusive_rate") or 0, 2),
                 }
 
                 if doc.update_stock and doc.set_warehouse:
@@ -5993,4 +6013,24 @@ def get_tax_template_info():
 
     except Exception as e:
         frappe.log_error("Get Tax Template Info Error", frappe.get_traceback())
+        return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist(allow_guest=False, methods=["GET"])
+def get_pwa_settings():
+    """Returns feature flags for the PWA from Fateh PWA Settings."""
+    try:
+        enable_tax_exclusive = 0
+        if frappe.db.exists("DocType", "Fateh PWA Settings"):
+            enable_tax_exclusive = cint(
+                frappe.db.get_single_value("Fateh PWA Settings", "enable_tax_exclusive_rate") or 0
+            )
+        return {
+            "status": "success",
+            "data": {
+                "enable_tax_exclusive_rate": enable_tax_exclusive,
+            }
+        }
+    except Exception as e:
+        frappe.log_error("Get PWA Settings Error", frappe.get_traceback())
         return {"status": "error", "message": str(e)}

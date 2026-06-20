@@ -18,6 +18,7 @@ import {
   searchItems,
   convertQuotationToSalesOrder,
   getTaxTemplateInfo,
+  getPwaSettings,
 } from '../services/api';
 import SARSymbol from './SARSymbol';
 import TransactionFormLayout from './TransactionFormLayout';
@@ -98,6 +99,7 @@ function QuotationModule({ customers = [], items = [] }) {
   const [errorDialog, setErrorDialog] = useState({ isOpen: false, title: '', message: '' });
   const [confirmationDialog, setConfirmationDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null, onCancel: null });
   const [taxInfo, setTaxInfo] = useState({ rate: 15, included_in_print_rate: false });
+  const [taxExclusiveEnabled, setTaxExclusiveEnabled] = useState(false);
 
   const getPriceValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) >= 0 ? parseFloat(v) : 0);
   const getQuantityValue = (v) => (Number.isFinite(parseFloat(v)) && parseFloat(v) > 0 ? parseFloat(v) : 1);
@@ -155,6 +157,9 @@ function QuotationModule({ customers = [], items = [] }) {
     fetchList();
     getTaxTemplateInfo().then((info) => {
       if (info && typeof info.rate === 'number') setTaxInfo(info);
+    }).catch(() => {});
+    getPwaSettings().then((settings) => {
+      setTaxExclusiveEnabled(!!settings?.enable_tax_exclusive_rate);
     }).catch(() => {});
   }, []);
 
@@ -323,10 +328,13 @@ function QuotationModule({ customers = [], items = [] }) {
           const conv = uomConversions.find((c) => c.uom === defaultUOM);
           if (conv?.conversion_factor) initialPrice = priceListRate * conv.conversion_factor;
         }
+        const isTaxExclusive = itemDetails?.tax_exclusive ? 1 : 0;
+        const taxExclusiveRate = isTaxExclusive ? (itemDetails?.tax_exclusive_rate || priceListRate) : 0;
+        const inclusivePrice = isTaxExclusive ? taxExclusiveRate * (1 + taxInfo.rate / 100) : initialPrice;
         const newItem = {
           code: itemDetails?.code || code,
           name: itemDetails?.name || item.name,
-          price: to2(initialPrice),
+          price: to2(inclusivePrice),
           price_list_rate: Number(to2(priceListRate)),
           uom: defaultUOM || '',
           stock_uom: stockUOM || '',
@@ -334,6 +342,8 @@ function QuotationModule({ customers = [], items = [] }) {
           uom_conversions: uomConversions,
           quantity: '1',
           originalPrice: Number(to2(priceListRate)),
+          tax_exclusive: isTaxExclusive,
+          tax_exclusive_rate: isTaxExclusive ? Number(to2(taxExclusiveRate)) : 0,
         };
         setLineItems((prev) => [...prev, newItem]);
       } catch {
@@ -347,12 +357,15 @@ function QuotationModule({ customers = [], items = [] }) {
           const conv = uomConversions.find((c) => c.uom === defaultUOM);
           if (conv?.conversion_factor) initialPrice = basePrice * conv.conversion_factor;
         }
+        const isTaxExclusiveFb = item.tax_exclusive ? 1 : 0;
+        const taxExclusiveRateFb = isTaxExclusiveFb ? (item.tax_exclusive_rate || basePrice) : 0;
+        const inclusivePriceFb = isTaxExclusiveFb ? taxExclusiveRateFb * (1 + taxInfo.rate / 100) : initialPrice;
         setLineItems((prev) => [
           ...prev,
           {
             code: item.code || item.item_code,
             name: item.name || item.item_name,
-            price: to2(initialPrice),
+            price: to2(inclusivePriceFb),
             price_list_rate: Number(to2(basePrice)),
             uom: defaultUOM || '',
             stock_uom: stockUOM || '',
@@ -360,6 +373,8 @@ function QuotationModule({ customers = [], items = [] }) {
             uom_conversions: uomConversions,
             quantity: '1',
             originalPrice: Number(to2(basePrice)),
+            tax_exclusive: isTaxExclusiveFb,
+            tax_exclusive_rate: isTaxExclusiveFb ? Number(to2(taxExclusiveRateFb)) : 0,
           },
         ]);
       } finally {
@@ -369,6 +384,16 @@ function QuotationModule({ customers = [], items = [] }) {
     setItemSearch('');
     setShowResults(false);
     setSearchResults([]);
+  };
+
+  const handleExclusiveRateChange = (code, value) => {
+    const sanitized = sanitizeDecimalInput(value);
+    setLineItems((prev) => prev.map((i) => {
+      if (i.code !== code || !i.tax_exclusive) return i;
+      const exclusiveRate = parseFloat(sanitized) || 0;
+      const inclusiveRate = exclusiveRate * (1 + taxInfo.rate / 100);
+      return { ...i, tax_exclusive_rate: exclusiveRate, price: (Math.round(inclusiveRate * 100) / 100).toFixed(2) };
+    }));
   };
 
   const handleUpdatePrice = (code, value) => {
@@ -883,6 +908,8 @@ function QuotationModule({ customers = [], items = [] }) {
         qty: getQuantityValue(i.quantity),
         rate: round2(getPriceValue(i.price)),
         uom: i.uom || i.stock_uom || '',
+        tax_exclusive: i.tax_exclusive ? 1 : 0,
+        tax_exclusive_rate: parseFloat(i.tax_exclusive_rate) || 0,
       }));
       
       let result;
@@ -1415,10 +1442,13 @@ function QuotationModule({ customers = [], items = [] }) {
         getPriceValue={getPriceValue}
         getQuantityValue={getQuantityValue}
         onUpdatePrice={handleUpdatePrice}
+        onExclusiveRateChange={handleExclusiveRateChange}
         onUpdateQuantity={handleUpdateQuantity}
         onUpdateUOM={handleUpdateUOM}
         onPriceBlur={handlePriceBlur}
         onRemoveItem={handleRemoveItem}
+        taxInfo={taxInfo}
+        taxExclusiveEnabled={taxExclusiveEnabled}
         discountAmount={discountAmount}
         onDiscountChange={handleUpdateDiscountAmount}
         calculateSubtotal={calculateSubtotal}

@@ -346,7 +346,9 @@ const transformInvoiceFromAPI = (apiInvoice) => {
       discount: parseFloat(item.discount_amount || item.discount || 0),
       total: parseFloat(item.amount || item.total || 0),
       uom: item.uom || item.stock_uom || 'Unit',
-      warehouse: item.warehouse || ''
+      warehouse: item.warehouse || '',
+      tax_exclusive: item.tax_exclusive ? 1 : 0,
+      tax_exclusive_rate: parseFloat(item.tax_exclusive_rate) || 0,
     })),
     subtotal: parseFloat(apiInvoice.net_total || apiInvoice.subtotal || 0),
     discount: parseFloat(apiInvoice.total_discount || apiInvoice.discount || 0),
@@ -394,6 +396,8 @@ const transformInvoiceToAPI = (uiInvoice) => {
         uom: selectedUOM, // Include uom field set to selected UOM
         sales_uom: selectedUOM, // Include sales_uom set to selected UOM
         stock_uom: selectedUOM, // Include stock_uom set to selected UOM
+        tax_exclusive: item.tax_exclusive ? 1 : 0,
+        tax_exclusive_rate: parseFloat(item.tax_exclusive_rate) || 0,
       };
     })
   };
@@ -624,6 +628,8 @@ export const getItemDetails = async (itemCode, customer = null) => {
       standard_rate: item.standard_rate || 0,
       item_prices: item.item_prices || [], // Preserve item_prices for reference
       uom_conversions: item.uom_conversions || [], // Include uom_conversions array
+      tax_exclusive: item.tax_exclusive ? 1 : 0,
+      tax_exclusive_rate: parseFloat(item.tax_exclusive_rate) || 0,
     };
   } catch (error) {
     console.error('Error fetching item details:', error);
@@ -2331,6 +2337,18 @@ export const getTaxTemplateInfo = async () => {
   }
 };
 
+export const getPwaSettings = async () => {
+  try {
+    const response = await apiRequest('/method/fateh_pwa.pwa.get_pwa_settings', { method: 'GET' });
+    const msg = response?.message;
+    if (msg?.data) return msg.data;
+    return { enable_tax_exclusive_rate: 0 };
+  } catch (error) {
+    console.warn('getPwaSettings failed:', error);
+    return { enable_tax_exclusive_rate: 0 };
+  }
+};
+
 export default {
   // Authentication
   login,
@@ -2351,8 +2369,9 @@ export default {
   getCustomerAddresses,
   updateCustomerAddress,
   deleteCustomerAddress,
-  // Tax
+  // Tax & Settings
   getTaxTemplateInfo,
+  getPwaSettings,
   // Sales Invoices
   createSalesInvoice,
   getSalesInvoiceList,

@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Plus, Search, Trash2, Save, Loader2, Check } from 'lucide-react';
-import { getItemPrice, searchItems, createSalesInvoice, updateSalesInvoice, getInvoiceDetails, getItemDetails, submitSalesInvoice, createCustomer, getSalesInvoiceList, getPaymentMethods, getTaxTemplateInfo, openPrintPdf } from '../services/api';
+import { getItemPrice, searchItems, createSalesInvoice, updateSalesInvoice, getInvoiceDetails, getItemDetails, submitSalesInvoice, createCustomer, getSalesInvoiceList, getPaymentMethods, getTaxTemplateInfo, getPwaSettings, openPrintPdf } from '../services/api';
 import SARSymbol from './SARSymbol';
 import ErrorDialog from './ErrorDialog';
 import ConfirmationDialog from './ConfirmationDialog';
@@ -42,6 +42,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
   const [taxInfo, setTaxInfo] = useState({ rate: 15, included_in_print_rate: false });
+  const [taxExclusiveEnabled, setTaxExclusiveEnabled] = useState(false);
   const itemDropdownRef = useRef(null);
   const [errorDialog, setErrorDialog] = useState({ isOpen: false, title: '', message: '' });
   const [confirmationDialog, setConfirmationDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null, onCancel: null });
@@ -211,6 +212,9 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
     }).catch(() => setPaymentMethods([]));
     getTaxTemplateInfo().then((info) => {
       if (info && typeof info.rate === 'number') setTaxInfo(info);
+    }).catch(() => {});
+    getPwaSettings().then((settings) => {
+      setTaxExclusiveEnabled(!!settings?.enable_tax_exclusive_rate);
     }).catch(() => {});
   }, []);
 
@@ -436,10 +440,17 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
           }
         }
         const roundPrice = (v) => (Math.round(Number(v) * 100) / 100).toFixed(2);
+        const isTaxExclusive = itemDetails?.tax_exclusive ? 1 : 0;
+        const taxExclusiveRate = isTaxExclusive ? (itemDetails?.tax_exclusive_rate || priceListRate) : 0;
+        const taxFraction = taxInfo.rate / 100;
+        // For tax-exclusive items, the inclusive price = exclusive_rate * (1 + tax_rate)
+        const inclusivePrice = isTaxExclusive
+          ? taxExclusiveRate * (1 + taxFraction)
+          : initialPrice;
         const newItem = {
           code: itemDetails?.code || item.code,
           name: itemDetails?.name || item.name,
-          price: roundPrice(initialPrice), // 2 decimal places
+          price: roundPrice(inclusivePrice), // 2 decimal places (inclusive rate)
           price_list_rate: Number(roundPrice(priceListRate)), // Store original (per stock_uom)
           uom: defaultUOM || stockUOM || '', // Use actual UOMs from API, no hardcoded fallback
           stock_uom: stockUOM || '', // Store original stock_uom from API (no fallback)
@@ -447,7 +458,9 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
           uom_conversions: uomConversions, // Store conversion factors
           stock: actualQty,
           quantity: baseQuantity.toString(),
-          originalPrice: Number(roundPrice(priceListRate)) // Store original for reference
+          originalPrice: Number(roundPrice(priceListRate)), // Store original for reference
+          tax_exclusive: isTaxExclusive,
+          tax_exclusive_rate: isTaxExclusive ? Number(roundPrice(taxExclusiveRate)) : 0,
         };
         setInvoiceItems([...invoiceItems, newItem]);
       } catch (error) {
@@ -469,10 +482,15 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
           }
         }
         const roundPriceFallback = (v) => (Math.round(Number(v) * 100) / 100).toFixed(2);
+        const isTaxExclusiveFallback = item.tax_exclusive ? 1 : 0;
+        const taxExclusiveRateFallback = isTaxExclusiveFallback ? (item.tax_exclusive_rate || basePrice) : 0;
+        const inclusivePriceFallback = isTaxExclusiveFallback
+          ? taxExclusiveRateFallback * (1 + taxInfo.rate / 100)
+          : initialPrice;
         const newItem = {
           code: item.code,
           name: item.name,
-          price: roundPriceFallback(initialPrice), // 2 decimal places
+          price: roundPriceFallback(inclusivePriceFallback), // 2 decimal places
           price_list_rate: Number(roundPriceFallback(basePrice)),
           uom: defaultUOM || '', // Use actual UOMs from API, no hardcoded fallback
           stock_uom: stockUOM || '', // Store actual stock_uom (no fallback)
@@ -480,7 +498,9 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
           uom_conversions: uomConversions,
           stock: item.stock || 0,
           quantity: (item.quantity || 1).toString(),
-          originalPrice: Number(roundPriceFallback(basePrice))
+          originalPrice: Number(roundPriceFallback(basePrice)),
+          tax_exclusive: isTaxExclusiveFallback,
+          tax_exclusive_rate: isTaxExclusiveFallback ? Number(roundPriceFallback(taxExclusiveRateFallback)) : 0,
         };
         setInvoiceItems([...invoiceItems, newItem]);
       } finally {
@@ -491,6 +511,17 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
     setItemSearch('');
     setShowResults(false);
     setSearchResults([]);
+  };
+
+  const handleExclusiveRateChange = (code, value) => {
+    const sanitized = sanitizeDecimalInput(value);
+    setInvoiceItems(invoiceItems.map(item => {
+      if (item.code !== code || !item.tax_exclusive) return item;
+      const exclusiveRate = parseFloat(sanitized) || 0;
+      const inclusiveRate = exclusiveRate * (1 + taxInfo.rate / 100);
+      const rounded = (Math.round(inclusiveRate * 100) / 100).toFixed(2);
+      return { ...item, tax_exclusive_rate: exclusiveRate, price: rounded };
+    }));
   };
 
   const handleUpdatePrice = (code, value) => {
@@ -1049,7 +1080,9 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
         total: round2(price * quantity),
         uom: selectedUOM,
         sales_uom: selectedUOM, // Set to selected UOM
-        stock_uom: selectedUOM // Set to selected UOM
+        stock_uom: selectedUOM, // Set to selected UOM
+        tax_exclusive: item.tax_exclusive ? 1 : 0,
+        tax_exclusive_rate: parseFloat(item.tax_exclusive_rate) || 0,
       };
     });
 
@@ -1616,7 +1649,8 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                         <tr>
                           <th>Code</th>
                           <th>Item Name</th>
-                          <th>Price</th>
+                          {taxExclusiveEnabled && <th>Excl. Rate</th>}
+                          <th>Rate</th>
                           <th>Qty</th>
                           <th>UOM</th>
                           <th>Total</th>
@@ -1632,18 +1666,39 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                             <tr key={item.code}>
                               <td className="font-semibold">{item.code}</td>
                               <td>{item.name}</td>
+                              {taxExclusiveEnabled && (
+                                <td>
+                                  {item.tax_exclusive ? (
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      className="form-input"
+                                      value={item.tax_exclusive_rate ?? ''}
+                                      onChange={(e) => handleExclusiveRateChange(item.code, e.target.value)}
+                                      placeholder="0.00"
+                                      style={{ width: '100px' }}
+                                    />
+                                  ) : (
+                                    <span style={{ color: '#bbb', textAlign: 'center', display: 'block' }}>—</span>
+                                  )}
+                                </td>
+                              )}
                               <td>
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  className="form-input"
-                                  value={item.price}
-                                  onChange={(e) => handleUpdatePrice(item.code, e.target.value)}
-                                  onBlur={() => handlePriceBlur(item.code)}
-                                  placeholder="0.00"
-                                  style={{ width: '110px' }}
-                                  required
-                                />
+                                {taxExclusiveEnabled && item.tax_exclusive ? (
+                                  <span style={{ display: 'block', width: '100px', padding: '6px 8px' }}>{parseFloat(item.price).toFixed(2)}</span>
+                                ) : (
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    className="form-input"
+                                    value={item.price}
+                                    onChange={(e) => handleUpdatePrice(item.code, e.target.value)}
+                                    onBlur={() => handlePriceBlur(item.code)}
+                                    placeholder="0.00"
+                                    style={{ width: '100px' }}
+                                    required
+                                  />
+                                )}
                               </td>
                               <td>
                                 <input
@@ -1684,11 +1739,11 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                       </tbody>
                       <tfoot>
                         <tr>
-                          <td colSpan="5" className="text-right font-bold">Subtotal:</td>
+                          <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right font-bold">Subtotal:</td>
                           <td colSpan="2" className="font-bold"><SARSymbol size={16} /> {calculateSubtotal().toFixed(2)}</td>
                         </tr>
-                        <tr>
-                          <td colSpan="5" className="text-right font-bold">Discount:</td>
+                        <tr style={{ display: 'none' }}>
+                          <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right font-bold">Discount:</td>
                           <td colSpan="2" style={{ padding: '8px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-start' }}>
                               <span style={{ color: 'var(--gray-600)' }}>-</span>
@@ -1700,8 +1755,8 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                                 value={discountAmount}
                                 onChange={(e) => handleUpdateDiscountAmount(e.target.value)}
                                 placeholder="0.00"
-                                style={{ 
-                                  width: '100px', 
+                                style={{
+                                  width: '100px',
                                   textAlign: 'left',
                                   fontWeight: 'bold',
                                   padding: '4px 8px'
@@ -1711,11 +1766,11 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                           </td>
                         </tr>
                         <tr>
-                          <td colSpan="5" className="text-right font-bold">Tax ({taxInfo.rate}%):</td>
+                          <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right font-bold">Tax ({taxInfo.rate}%):</td>
                           <td colSpan="2" className="font-bold"><SARSymbol size={16} /> {calculateTax().toFixed(2)}</td>
                         </tr>
                         <tr style={{ borderTop: '2px solid var(--primary)' }}>
-                          <td colSpan="5" className="text-right font-bold" style={{ fontSize: '1.125rem' }}>TOTAL:</td>
+                          <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right font-bold" style={{ fontSize: '1.125rem' }}>TOTAL:</td>
                           <td colSpan="2" className="font-bold" style={{ fontSize: '1.25rem', color: 'var(--primary)' }}>
                             <SARSymbol size={16} /> {calculateTotal().toFixed(2)}
                           </td>
@@ -1888,6 +1943,7 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                       <th>Item Name</th>
                       <th>Qty</th>
                       <th>UOM</th>
+                      {taxExclusiveEnabled && <th>Excl. Rate</th>}
                       <th>Rate</th>
                       <th>Discount</th>
                       <th>Amount</th>
@@ -1902,6 +1958,13 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                           <td>{item.name || item.item_name}</td>
                           <td>{item.quantity || item.qty || 1}</td>
                           <td>{item.uom || '-'}</td>
+                          {taxExclusiveEnabled && (
+                            <td>
+                              {item.tax_exclusive
+                                ? <><SARSymbol size={16} /> {(item.tax_exclusive_rate || 0).toFixed(2)}</>
+                                : <span style={{ color: '#bbb' }}>—</span>}
+                            </td>
+                          )}
                           <td><SARSymbol size={16} /> {(item.price || item.rate || 0).toFixed(2)}</td>
                           <td><SARSymbol size={16} /> {(item.discount || 0).toFixed(2)}</td>
                           <td className="font-semibold"><SARSymbol size={16} /> {itemTotal.toFixed(2)}</td>
@@ -1911,23 +1974,23 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td colSpan="5" className="text-right font-semibold">Subtotal:</td>
+                      <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right font-semibold">Subtotal:</td>
                       <td colSpan="2" className="font-semibold">
                         <SARSymbol size={16} /> {(invoice.subtotal || invoice.net_total || 0).toFixed(2)}
                       </td>
                     </tr>
                     {invoice.discount > 0 && (
-                      <tr>
-                        <td colSpan="5" className="text-right">Discount:</td>
+                      <tr style={{ display: 'none' }}>
+                        <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right">Discount:</td>
                         <td colSpan="2"><SARSymbol size={16} /> {(invoice.discount || 0).toFixed(2)}</td>
                       </tr>
                     )}
                     <tr>
-                      <td colSpan="5" className="text-right">Tax ({taxInfo.rate}%):</td>
+                      <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right">Tax ({taxInfo.rate}%):</td>
                       <td colSpan="2"><SARSymbol size={16} /> {(invoice.tax || invoice.total_taxes_and_charges || 0).toFixed(2)}</td>
                     </tr>
                     <tr style={{ borderTop: '2px solid var(--primary)' }}>
-                      <td colSpan="5" className="text-right font-bold" style={{ fontSize: '1.125rem' }}>TOTAL:</td>
+                      <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right font-bold" style={{ fontSize: '1.125rem' }}>TOTAL:</td>
                       <td colSpan="2" className="font-bold" style={{ fontSize: '1.25rem', color: 'var(--primary)' }}>
                         <SARSymbol size={16} /> {(invoice.total || invoice.grand_total || 0).toFixed(2)}
                       </td>
