@@ -4,7 +4,13 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "enable_tax_exclusive_rate"
+  "enable_tax_exclusive_rate",
+  "section_break_print_formats",
+  "pos_invoice_print_format",
+  "quotation_print_format",
+  "column_break_print_formats",
+  "sales_order_print_format",
+  "payment_entry_print_format"
  ],
  "fields": [
   {
@@ -12,6 +18,43 @@
    "fieldname": "enable_tax_exclusive_rate",
    "fieldtype": "Check",
    "label": "Enable Tax Exclusive Rate"
+  },
+  {
+   "fieldname": "section_break_print_formats",
+   "fieldtype": "Section Break",
+   "label": "Print Formats"
+  },
+  {
+   "fieldname": "pos_invoice_print_format",
+   "fieldtype": "Link",
+   "label": "Sales Invoice Print Format",
+   "link_filters": "[[\"Print Format\",\"doc_type\",\"=\",\"Sales Invoice\"]]",
+   "options": "Print Format"
+  },
+  {
+   "fieldname": "quotation_print_format",
+   "fieldtype": "Link",
+   "label": "Quotation Print Format",
+   "link_filters": "[[\"Print Format\",\"doc_type\",\"=\",\"Quotation\"]]",
+   "options": "Print Format"
+  },
+  {
+   "fieldname": "column_break_print_formats",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sales_order_print_format",
+   "fieldtype": "Link",
+   "label": "Sales Order Print Format",
+   "link_filters": "[[\"Print Format\",\"doc_type\",\"=\",\"Sales Order\"]]",
+   "options": "Print Format"
+  },
+  {
+   "fieldname": "payment_entry_print_format",
+   "fieldtype": "Link",
+   "label": "Payment Entry Print Format",
+   "link_filters": "[[\"Print Format\",\"doc_type\",\"=\",\"Payment Entry\"]]",
+   "options": "Print Format"
   }
  ],
  "issingle": 1,

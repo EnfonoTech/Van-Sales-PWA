@@ -13,6 +13,32 @@ except ImportError:
     NegativeStockError = Exception  # fallback if erpnext not installed
 
 
+_PWA_PRINT_FORMAT_FIELDS = {
+    "Sales Invoice": "pos_invoice_print_format",
+    "Quotation":     "quotation_print_format",
+    "Sales Order":   "sales_order_print_format",
+    "Payment Entry": "payment_entry_print_format",
+}
+
+_PWA_PRINT_FORMAT_FALLBACKS = {
+    "Sales Invoice": "Sales Invoice PF OG",
+    "Quotation":     "Standard",
+    "Sales Order":   "Standard",
+    "Payment Entry": "Receipt voucher",
+}
+
+
+def _get_pwa_print_format(doctype):
+    """Return the configured print format for *doctype* from Fateh PWA Settings,
+    falling back to the legacy hardcoded default when nothing is configured."""
+    field = _PWA_PRINT_FORMAT_FIELDS.get(doctype)
+    if field and frappe.db.exists("DocType", "Fateh PWA Settings"):
+        configured = frappe.db.get_single_value("Fateh PWA Settings", field)
+        if configured:
+            return configured
+    return _PWA_PRINT_FORMAT_FALLBACKS.get(doctype, "Standard")
+
+
 def _resolve_login_id(login_input):
     """
     Resolve login input (email or username) to User document name.
@@ -2010,8 +2036,7 @@ def get_sales_invoice_list():
     base_url = frappe.utils.get_url()
     invoice_list = []
 
-    # ✅ Encode the format safely
-    print_format = frappe.utils.quote("Sales Invoice PF OG")
+    print_format = frappe.utils.quote(_get_pwa_print_format("Sales Invoice"))
 
     for inv in invoice_names:
         doc = frappe.get_doc("Sales Invoice", inv.name)
@@ -2046,7 +2071,7 @@ def get_sales_invoice_list():
 
     return {
         "status_code": 200,
-        "print_format": "Sales Invoice PF OG",
+        "print_format": _get_pwa_print_format("Sales Invoice"),
         "count": len(invoice_list),
         "total_count": total_count,
         "invoices": invoice_list
@@ -2202,7 +2227,7 @@ def get_quotation_details():
         return {"status": "error", "message": "Quotation not found"}
     doc = frappe.get_doc("Quotation", name)
     base_url = frappe.utils.get_url()
-    print_format = frappe.utils.quote("Standard")
+    print_format = frappe.utils.quote(_get_pwa_print_format("Quotation"))
     pdf_url = (
         f"{base_url}/printview?"
         f"doctype=Quotation"
@@ -2421,7 +2446,7 @@ def get_sales_order_details():
         return {"status": "error", "message": "Sales Order not found"}
     doc = frappe.get_doc("Sales Order", name)
     base_url = frappe.utils.get_url()
-    print_format = frappe.utils.quote("Standard")
+    print_format = frappe.utils.quote(_get_pwa_print_format("Sales Order"))
     pdf_url = (
         f"{base_url}/printview?"
         f"doctype=Sales%20Order"
@@ -3317,7 +3342,7 @@ def get_invoice_details():
         # PDF URL
         # -------------------------
         base_url = frappe.utils.get_url()
-        print_format = frappe.utils.quote("Sales Invoice PF OG")
+        print_format = frappe.utils.quote(_get_pwa_print_format("Sales Invoice"))
 
         pdf_url = (
             f"{base_url}/printview?"
@@ -4015,7 +4040,7 @@ def get_payment_entry_details():
 
         
         base_url = get_url()
-        print_format = frappe.utils.quote("Receipt voucher")
+        print_format = frappe.utils.quote(_get_pwa_print_format("Payment Entry"))
 
         pdf_url = (
             f"{base_url}/printview?"
@@ -6018,17 +6043,21 @@ def get_tax_template_info():
 
 @frappe.whitelist(allow_guest=False, methods=["GET"])
 def get_pwa_settings():
-    """Returns feature flags for the PWA from Fateh PWA Settings."""
+    """Returns feature flags and print format config for the PWA from Fateh PWA Settings."""
     try:
         enable_tax_exclusive = 0
+        print_formats = {field: "" for field in _PWA_PRINT_FORMAT_FIELDS.values()}
         if frappe.db.exists("DocType", "Fateh PWA Settings"):
             enable_tax_exclusive = cint(
                 frappe.db.get_single_value("Fateh PWA Settings", "enable_tax_exclusive_rate") or 0
             )
+            for field in _PWA_PRINT_FORMAT_FIELDS.values():
+                print_formats[field] = frappe.db.get_single_value("Fateh PWA Settings", field) or ""
         return {
             "status": "success",
             "data": {
                 "enable_tax_exclusive_rate": enable_tax_exclusive,
+                **print_formats,
             }
         }
     except Exception as e:

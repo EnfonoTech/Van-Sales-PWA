@@ -1137,7 +1137,7 @@ export const logout = async () => {
  * @param {string} name - document name
  * @param {string} [letterhead] - optional letterhead name (e.g. doc.letter_head) so printview uses doc's letterhead
  */
-export const openPrintPdf = (doctype, name, letterhead) => {
+export const openPrintPdf = (doctype, name, letterhead, printFormat) => {
   const params = new URLSearchParams({
     doctype,
     name,
@@ -1147,6 +1147,9 @@ export const openPrintPdf = (doctype, name, letterhead) => {
   });
   if (letterhead && String(letterhead).trim()) {
     params.set('letterhead', String(letterhead).trim());
+  }
+  if (printFormat && String(printFormat).trim()) {
+    params.set('format', String(printFormat).trim());
   }
   const printUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/printview?${params.toString()}`;
   window.open(printUrl, '_blank', 'noopener');

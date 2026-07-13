@@ -43,6 +43,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
   const [taxInfo, setTaxInfo] = useState({ rate: 15, included_in_print_rate: false });
   const [taxExclusiveEnabled, setTaxExclusiveEnabled] = useState(false);
+  const [pwaSettings, setPwaSettings] = useState({});
   const itemDropdownRef = useRef(null);
   const [errorDialog, setErrorDialog] = useState({ isOpen: false, title: '', message: '' });
   const [confirmationDialog, setConfirmationDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null, onCancel: null });
@@ -215,6 +216,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
     }).catch(() => {});
     getPwaSettings().then((settings) => {
       setTaxExclusiveEnabled(!!settings?.enable_tax_exclusive_rate);
+      setPwaSettings(settings || {});
     }).catch(() => {});
   }, []);
 
@@ -1877,7 +1879,7 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                         <button
                           type="button"
                           className="btn btn-primary btn-sm"
-                          onClick={() => openPrintPdf('Sales Invoice', invoiceName, invoice.letter_head).catch((e) => alert(e?.message || 'Print failed'))}
+                          onClick={() => openPrintPdf('Sales Invoice', invoiceName, invoice.letter_head, pwaSettings.pos_invoice_print_format).catch((e) => alert(e?.message || 'Print failed'))}
                           title="Print (default format with letterhead)"
                         >
                           🖨️ Print Invoice

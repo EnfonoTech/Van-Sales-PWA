@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Search, Loader2, X } from 'lucide-react';
 import SARSymbol from './SARSymbol';
 import SuccessDialog from './SuccessDialog';
-import { createPaymentEntry, getOutstandingInvoicesForPayment, getPaymentEntryDetails, getPaymentMethods, openPrintPdf } from '../services/api';
+import { createPaymentEntry, getOutstandingInvoicesForPayment, getPaymentEntryDetails, getPaymentMethods, getPwaSettings, openPrintPdf } from '../services/api';
 import { Trash2 } from 'lucide-react';
 
 function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustomers, loadingPayments, loadingSales }) {
@@ -77,6 +77,13 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
   const [selectedInvoices, setSelectedInvoices] = useState([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState([]);
+  const [pwaSettings, setPwaSettings] = useState({});
+
+  useEffect(() => {
+    getPwaSettings().then((settings) => {
+      setPwaSettings(settings || {});
+    }).catch(() => {});
+  }, []);
 
   // Fetch enabled payment methods (Mode of Payment) for user's company
   useEffect(() => {
@@ -718,7 +725,7 @@ function PaymentModule({ customers, sales, payments, onAddPayment, loadingCustom
                       <button
                         type="button"
                         className="btn btn-primary btn-sm"
-                        onClick={() => openPrintPdf('Payment Entry', payment.name || payment.payment_entry, payment.letter_head).catch((e) => alert(e?.message || 'Print failed'))}
+                        onClick={() => openPrintPdf('Payment Entry', payment.name || payment.payment_entry, payment.letter_head, pwaSettings.payment_entry_print_format).catch((e) => alert(e?.message || 'Print failed'))}
                         title="Print (default format with letterhead)"
                       >
                         🖨️ Print Payment

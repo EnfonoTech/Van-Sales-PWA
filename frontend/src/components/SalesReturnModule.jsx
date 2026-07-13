@@ -1,13 +1,14 @@
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { Plus, RotateCcw, ChevronDown, Loader2, CheckCircle, X, Search } from 'lucide-react';
-import { 
-  createSalesReturn, 
-  submitSalesReturn, 
-  getSalesReturnDetails, 
+import {
+  createSalesReturn,
+  submitSalesReturn,
+  getSalesReturnDetails,
   getSalesReturnsList,
   getInvoiceDetails,
   getSalesInvoiceList,
+  getPwaSettings,
   openPrintPdf
 } from '../services/api';
 import SARSymbol from './SARSymbol';
@@ -34,6 +35,7 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
   const [reason, setReason] = useState('');
   const [postingDate, setPostingDate] = useState(new Date().toISOString().split('T')[0]);
   const [isFullReturn, setIsFullReturn] = useState(true);
+  const [pwaSettings, setPwaSettings] = useState({});
   const [showInvoiceDropdown, setShowInvoiceDropdown] = useState(false);
   const invoiceDropdownRef = useRef(null);
   
@@ -70,6 +72,12 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    getPwaSettings().then((settings) => {
+      setPwaSettings(settings || {});
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (view === 'list') {
@@ -414,7 +422,7 @@ function SalesReturnModule({ customers, sales, loadingSales, loadingCustomers })
                   <button
                     type="button"
                     className="btn btn-primary btn-sm"
-                    onClick={() => openPrintPdf('Sales Invoice', returnData.name || returnData.return_invoice, returnData.letter_head).catch((e) => alert(e?.message || 'Print failed'))}
+                    onClick={() => openPrintPdf('Sales Invoice', returnData.name || returnData.return_invoice, returnData.letter_head, pwaSettings.pos_invoice_print_format).catch((e) => alert(e?.message || 'Print failed'))}
                     title="Print (default format with letterhead)"
                   >
                     🖨️ Print
