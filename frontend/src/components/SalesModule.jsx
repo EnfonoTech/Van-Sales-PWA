@@ -447,12 +447,23 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         }
         const roundPrice = (v) => (Math.round(Number(v) * 100) / 100).toFixed(2);
         const isTaxExclusive = itemDetails?.tax_exclusive ? 1 : 0;
-        const taxExclusiveRate = isTaxExclusive ? (itemDetails?.tax_exclusive_rate || priceListRate) : 0;
         const taxFraction = taxInfo.rate / 100;
-        // For tax-exclusive items, the inclusive price = exclusive_rate * (1 + tax_rate)
-        const inclusivePrice = isTaxExclusive
-          ? taxExclusiveRate * (1 + taxFraction)
-          : initialPrice;
+        const isIncluded = !!taxInfo.included_in_print_rate;
+        // When included_in_print_rate: price list rate is already inclusive → extract exclusive rate
+        // When not included: price list rate is exclusive → compute inclusive price
+        let taxExclusiveRate, inclusivePrice;
+        if (isTaxExclusive) {
+          if (isIncluded) {
+            taxExclusiveRate = taxFraction > 0 ? initialPrice / (1 + taxFraction) : initialPrice;
+            inclusivePrice = initialPrice;
+          } else {
+            taxExclusiveRate = itemDetails?.tax_exclusive_rate || initialPrice;
+            inclusivePrice = taxExclusiveRate * (1 + taxFraction);
+          }
+        } else {
+          taxExclusiveRate = 0;
+          inclusivePrice = initialPrice;
+        }
         const newItem = {
           code: itemDetails?.code || item.code,
           name: itemDetails?.name || item.name,
@@ -489,10 +500,21 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         }
         const roundPriceFallback = (v) => (Math.round(Number(v) * 100) / 100).toFixed(2);
         const isTaxExclusiveFallback = item.tax_exclusive ? 1 : 0;
-        const taxExclusiveRateFallback = isTaxExclusiveFallback ? (item.tax_exclusive_rate || basePrice) : 0;
-        const inclusivePriceFallback = isTaxExclusiveFallback
-          ? taxExclusiveRateFallback * (1 + taxInfo.rate / 100)
-          : initialPrice;
+        const taxFractionFallback = taxInfo.rate / 100;
+        const isIncludedFallback = !!taxInfo.included_in_print_rate;
+        let taxExclusiveRateFallback, inclusivePriceFallback;
+        if (isTaxExclusiveFallback) {
+          if (isIncludedFallback) {
+            taxExclusiveRateFallback = taxFractionFallback > 0 ? initialPrice / (1 + taxFractionFallback) : initialPrice;
+            inclusivePriceFallback = initialPrice;
+          } else {
+            taxExclusiveRateFallback = item.tax_exclusive_rate || initialPrice;
+            inclusivePriceFallback = taxExclusiveRateFallback * (1 + taxFractionFallback);
+          }
+        } else {
+          taxExclusiveRateFallback = 0;
+          inclusivePriceFallback = initialPrice;
+        }
         const newItem = {
           code: item.code,
           name: item.name,
