@@ -204,19 +204,23 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
     }
   }, [location.search]);
 
-  // Fetch payment methods on mount
+  // Fetch payment methods and settings on mount; pre-select default payment method
   useEffect(() => {
-    getPaymentMethods().then((list) => {
-      if (Array.isArray(list) && list.length > 0) {
-        setPaymentMethods(list);
-      }
-    }).catch(() => setPaymentMethods([]));
-    getTaxTemplateInfo().then((info) => {
-      if (info && typeof info.rate === 'number') setTaxInfo(info);
-    }).catch(() => {});
-    getPwaSettings().then((settings) => {
+    Promise.all([
+      getPaymentMethods().catch(() => []),
+      getPwaSettings().catch(() => ({})),
+    ]).then(([list, settings]) => {
+      const methods = Array.isArray(list) && list.length > 0 ? list : [];
+      setPaymentMethods(methods);
       setTaxExclusiveEnabled(!!settings?.enable_tax_exclusive_rate);
       setPwaSettings(settings || {});
+      const defaultMop = settings?.default_payment_method;
+      if (defaultMop && methods.includes(defaultMop)) {
+        setSelectedPaymentMethod(defaultMop);
+      }
+    });
+    getTaxTemplateInfo().then((info) => {
+      if (info && typeof info.rate === 'number') setTaxInfo(info);
     }).catch(() => {});
   }, []);
 
@@ -873,13 +877,8 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
       setInvoiceItems(itemsForForm);
       setDiscountAmount((details.discount ?? details.discount_amount ?? 0).toString());
       
-      // Load payment method if invoice has included payment
-      if (details.is_pos && details.payments && details.payments.length > 0) {
-        const firstPayment = details.payments[0];
-        setSelectedPaymentMethod(firstPayment.mode_of_payment || '');
-      } else {
-        setSelectedPaymentMethod('');
-      }
+      // Load payment method from custom_mode_of_payment
+      setSelectedPaymentMethod((details.custom_mode_of_payment || '').trim());
 
       setEditingInvoice(invoiceName);
       setView('create');
@@ -1103,15 +1102,9 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
       total: grandTotal
     };
 
-    // If payment method is selected, add included payment (is_pos = 1 and payments table)
-    // Note: Amount will be recalculated by backend based on final grand_total after taxes
+    // Payment method — stored as custom_mode_of_payment; Payment Entry created at submit
     if (selectedPaymentMethod) {
-      invoiceData.is_pos = 1;
-      invoiceData.mode_of_payment = selectedPaymentMethod; // Top-level fallback for backend
-      invoiceData.payments = [{
-        mode_of_payment: selectedPaymentMethod,
-        amount: grandTotal  // Will be adjusted by backend to match final grand_total
-      }];
+      invoiceData.mode_of_payment = selectedPaymentMethod;
     }
 
     try {
@@ -1125,14 +1118,9 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
           discount_amount: invoiceData.discount_amount,
           items: formattedItems
         };
-        // Include payment if selected
+        // Update payment method
         if (selectedPaymentMethod) {
-          minimalUpdate.is_pos = 1;
           minimalUpdate.mode_of_payment = selectedPaymentMethod;
-          minimalUpdate.payments = [{
-            mode_of_payment: selectedPaymentMethod,
-            amount: grandTotal
-          }];
         }
         result = await updateSalesInvoice(minimalUpdate);
         invoiceName = editingInvoice;

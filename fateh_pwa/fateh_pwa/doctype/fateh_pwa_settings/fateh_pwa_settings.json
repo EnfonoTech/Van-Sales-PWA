@@ -5,6 +5,10 @@
  "engine": "InnoDB",
  "field_order": [
   "enable_tax_exclusive_rate",
+  "section_break_payment",
+  "default_payment_method",
+  "column_break_payment",
+  "auto_submit_payment_entry",
   "section_break_print_formats",
   "pos_invoice_print_format",
   "quotation_print_format",
@@ -18,6 +22,27 @@
    "fieldname": "enable_tax_exclusive_rate",
    "fieldtype": "Check",
    "label": "Enable Tax Exclusive Rate"
+  },
+  {
+   "fieldname": "section_break_payment",
+   "fieldtype": "Section Break",
+   "label": "Payment Settings"
+  },
+  {
+   "fieldname": "default_payment_method",
+   "fieldtype": "Link",
+   "label": "Default Payment Method",
+   "options": "Mode of Payment"
+  },
+  {
+   "fieldname": "column_break_payment",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "auto_submit_payment_entry",
+   "fieldtype": "Check",
+   "label": "Auto Submit Payment Entry"
   },
   {
    "fieldname": "section_break_print_formats",

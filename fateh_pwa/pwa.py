@@ -2923,36 +2923,26 @@ def create_sales_invoice():
         update_stock = cint(data.get("update_stock", 0))
 
         # --------------------------------------------------
-        # MODE OF PAYMENT (optional – not required for create)
+        # MODE OF PAYMENT (optional – stored on invoice; Payment Entry created at submit)
+        # Accept custom_mode_of_payment, mode_of_payment, or payments[0].mode_of_payment
         # --------------------------------------------------
-        custom_mode_of_payment = data.get("custom_mode_of_payment")
+        custom_mode_of_payment = (
+            data.get("custom_mode_of_payment")
+            or data.get("mode_of_payment")
+            or data.get("payment_method")
+        )
+        if not custom_mode_of_payment and data.get("payments"):
+            payments_list = data.get("payments")
+            if isinstance(payments_list, list) and payments_list:
+                custom_mode_of_payment = (
+                    payments_list[0].get("mode_of_payment")
+                    or payments_list[0].get("payment_method")
+                )
+        custom_mode_of_payment = (custom_mode_of_payment or "").strip() or None
         if custom_mode_of_payment and not frappe.db.exists("Mode of Payment", custom_mode_of_payment):
             return {
                 "status": "error",
                 "message": f"Mode of Payment '{custom_mode_of_payment}' not found"
-            }
-
-        # --------------------------------------------------
-        # INCLUDED PAYMENT (is_pos and payments table)
-        # Accept both "payments" array and top-level "mode_of_payment"/"payment_method" for compatibility
-        # --------------------------------------------------
-        is_pos = cint(data.get("is_pos", 0))
-        payments_data = data.get("payments") or []
-        if not isinstance(payments_data, list):
-            payments_data = []
-        # Fallback: single mode_of_payment / payment_method at top level (e.g. from some clients)
-        single_mop = data.get("mode_of_payment") or data.get("payment_method")
-        if single_mop and not payments_data:
-            payments_data = [{"mode_of_payment": single_mop, "amount": 0}]
-        if payments_data and len(payments_data) > 0:
-            is_pos = 1
-            # Validate payment methods
-            for payment in payments_data:
-                mode_of_payment = payment.get("mode_of_payment") or payment.get("payment_method")
-                if mode_of_payment and not frappe.db.exists("Mode of Payment", mode_of_payment):
-                    return {
-                        "status": "error",
-                        "message": f"Mode of Payment '{mode_of_payment}' not found"
             }
 
         # --------------------------------------------------
@@ -3111,33 +3101,13 @@ def create_sales_invoice():
             "items": invoice_items,
             "taxes": tax_rows,
             "taxes_and_charges": tax_template,
-            "is_pos": is_pos
         })
 
         # --------------------------------------------------
-        # ADD PAYMENTS TABLE (if is_pos = 1 and payments provided)
+        # SET MODE OF PAYMENT (stored for Payment Entry creation at submit)
         # --------------------------------------------------
-        if is_pos and payments_data:
-            for payment_entry in payments_data:
-                mode_of_payment = payment_entry.get("mode_of_payment") or payment_entry.get("payment_method")
-                amount = flt(payment_entry.get("amount", 0))
-                if mode_of_payment:
-                    # Allow amount 0 here; we'll set it to grand_total after calculate_taxes_and_totals
-                    if amount <= 0:
-                        amount = None  # will be set later from grand_total
-                    # Get default account for mode of payment
-                    mop_doc = frappe.get_doc("Mode of Payment", mode_of_payment)
-                    default_account = None
-                    if mop_doc.accounts:
-                        for mop_account in mop_doc.accounts:
-                            if mop_account.company == company:
-                                default_account = mop_account.default_account
-                                break
-                    doc.append("payments", {
-                        "mode_of_payment": mode_of_payment,
-                        "amount": amount or 0,
-                        "account": default_account
-        })
+        if custom_mode_of_payment:
+            doc.custom_mode_of_payment = custom_mode_of_payment
 
         # Ensure every item and parent have a valid warehouse before set_missing_values.
         # ERPNext get_item_details -> update_bin_details -> get_bin_details(out.warehouse);
@@ -3188,30 +3158,6 @@ def create_sales_invoice():
 
         doc.calculate_taxes_and_totals()
 
-        # Re-apply payments after calculate_taxes_and_totals so they are never cleared by hooks/set_missing_values
-        # and set amount to grand_total (full payment)
-        if is_pos and payments_data:
-            doc.set("payments", [])
-            for payment_entry in payments_data:
-                mode_of_payment = payment_entry.get("mode_of_payment") or payment_entry.get("payment_method")
-                if not mode_of_payment:
-                    continue
-                mop_doc = frappe.get_doc("Mode of Payment", mode_of_payment)
-                default_account = None
-                if mop_doc.accounts:
-                    for mop_account in mop_doc.accounts:
-                        if mop_account.company == company:
-                            default_account = mop_account.default_account
-                            break
-                doc.append("payments", {
-                    "mode_of_payment": mode_of_payment,
-                    "amount": doc.grand_total,
-                    "account": default_account
-                })
-            if doc.payments:
-                for payment_row in doc.payments:
-                    payment_row.base_amount = doc.grand_total * flt(doc.conversion_rate)
-        
         # Update payment_schedule due_dates to tomorrow_date AFTER calculate_taxes_and_totals
         # (since calculate_taxes_and_totals might regenerate payment_schedule)
         if doc.payment_schedule:
@@ -3455,61 +3401,29 @@ def update_sales_invoice():
             doc.customer = customer
 
         # --------------------------------------------------
-        # UPDATE MODE OF PAYMENT (OPTIONAL)
+        # UPDATE MODE OF PAYMENT (stored for Payment Entry at submit)
+        # Accept custom_mode_of_payment, mode_of_payment, or payments[0].mode_of_payment
         # --------------------------------------------------
-        if data.get("custom_mode_of_payment"):
-            if not frappe.db.exists("Mode of Payment", data.get("custom_mode_of_payment")):
+        new_mop = (
+            data.get("custom_mode_of_payment")
+            or data.get("mode_of_payment")
+            or data.get("payment_method")
+        )
+        if not new_mop and data.get("payments"):
+            payments_list = data.get("payments")
+            if isinstance(payments_list, list) and payments_list:
+                new_mop = (
+                    payments_list[0].get("mode_of_payment")
+                    or payments_list[0].get("payment_method")
+                )
+        new_mop = (new_mop or "").strip() or None
+        if new_mop:
+            if not frappe.db.exists("Mode of Payment", new_mop):
                 return {
                     "status": "error",
-                    "message": f"Mode of Payment '{data.get('custom_mode_of_payment')}' not found"
+                    "message": f"Mode of Payment '{new_mop}' not found"
                 }
-            doc.custom_mode_of_payment = data.get("custom_mode_of_payment")
-
-        # --------------------------------------------------
-        # UPDATE INCLUDED PAYMENT (is_pos and payments table)
-        # Accept both "payments" array and top-level "mode_of_payment"/"payment_method"
-        # --------------------------------------------------
-        if "is_pos" in data:
-            doc.is_pos = cint(data.get("is_pos", 0))
-
-        payments_data = data.get("payments") or []
-        if not isinstance(payments_data, list):
-            payments_data = []
-        single_mop = data.get("mode_of_payment") or data.get("payment_method")
-        if single_mop and not payments_data:
-            payments_data = [{"mode_of_payment": single_mop, "amount": doc.grand_total or 0}]
-        if payments_data and len(payments_data) > 0:
-            # Set is_pos = 1 if payments are provided
-            doc.is_pos = 1
-            # Clear existing payments and add new ones
-            doc.set("payments", [])
-            for payment_entry in payments_data:
-                mode_of_payment = payment_entry.get("mode_of_payment") or payment_entry.get("payment_method")
-                amount = flt(payment_entry.get("amount", 0))
-                if mode_of_payment:
-                    # Validate mode of payment exists
-                    if not frappe.db.exists("Mode of Payment", mode_of_payment):
-                        return {
-                            "status": "error",
-                            "message": f"Mode of Payment '{mode_of_payment}' not found"
-                        }
-                    # Get default account for mode of payment
-                    mop_doc = frappe.get_doc("Mode of Payment", mode_of_payment)
-                    default_account = None
-                    if mop_doc.accounts:
-                        for mop_account in mop_doc.accounts:
-                            if mop_account.company == doc.company:
-                                default_account = mop_account.default_account
-                                break
-                    
-                    doc.append("payments", {
-                        "mode_of_payment": mode_of_payment,
-                        "amount": amount if amount > 0 else (doc.grand_total or 0),
-                        "account": default_account
-                    })
-        elif "is_pos" in data and cint(data.get("is_pos", 0)) == 0:
-            # If is_pos is explicitly set to 0, clear payments
-            doc.set("payments", [])
+            doc.custom_mode_of_payment = new_mop
 
         # --------------------------------------------------
         # UPDATE STOCK FLAG (OPTIONAL)
@@ -3736,26 +3650,10 @@ def submit_sales_invoice():
                     "payment_entry": None
                 }
             }
-        payment_mode_lower = payment_mode.lower()
-
         # -------------------------------------------------
         # SUBMIT INVOICE (ERPNext STOCK CHECK HERE)
         # -------------------------------------------------
         inv.submit()
-
-        # -------------------------------------------------
-        # CREDIT / CREDIT CARD → NO PAYMENT ENTRY
-        # -------------------------------------------------
-        if payment_mode_lower in ("credit", "credit card"):
-            frappe.db.commit()
-            return {
-                "status": "success",
-                "message": f"Invoice submitted successfully ({payment_mode}). No Payment Entry created.",
-                "data": {
-                    "invoice_name": inv.name,
-                    "payment_entry": None
-                }
-            }
 
         # -------------------------------------------------
         # RECEIVABLE ACCOUNT
@@ -3830,15 +3728,28 @@ def submit_sales_invoice():
         })
 
         pe.insert(ignore_permissions=True)
+
+        auto_submit = cint(
+            frappe.db.get_single_value("Fateh PWA Settings", "auto_submit_payment_entry") or 0
+        ) if frappe.db.exists("DocType", "Fateh PWA Settings") else 0
+
+        if auto_submit:
+            pe.submit()
+            pe_status = "Submitted"
+            pe_message = "Invoice submitted. Payment Entry submitted."
+        else:
+            pe_status = "Draft"
+            pe_message = "Invoice submitted. Payment Entry created as Draft."
+
         frappe.db.commit()
 
         return {
             "status": "success",
-            "message": "Invoice submitted. Payment Entry created as Draft.",
+            "message": pe_message,
             "data": {
                 "invoice_name": inv.name,
                 "payment_entry": pe.name,
-                "payment_entry_status": "Draft"
+                "payment_entry_status": pe_status
             }
         }
 
@@ -3887,9 +3798,24 @@ def get_mode_of_payment_list():
         )
         if not mop_names:
             return {"status": "success", "data": []}
+
+        mop_filter_names = list(set(mop_names))
+
+        # Restrict to user's Mode of Payment permissions if any are configured
+        user_mop_permissions = frappe.get_all(
+            "User Permission",
+            filters={"user": frappe.session.user, "allow": "Mode of Payment"},
+            pluck="for_value"
+        )
+        if user_mop_permissions:
+            allowed_intersection = list(set(mop_filter_names) & set(user_mop_permissions))
+            if not allowed_intersection:
+                return {"status": "success", "data": []}
+            mop_filter_names = allowed_intersection
+
         enabled = frappe.get_all(
             "Mode of Payment",
-            filters={"name": ["in", list(set(mop_names))], "enabled": 1},
+            filters={"name": ["in", mop_filter_names], "enabled": 1},
             fields=["name"],
             order_by="name"
         )
@@ -6053,10 +5979,14 @@ def get_pwa_settings():
             )
             for field in _PWA_PRINT_FORMAT_FIELDS.values():
                 print_formats[field] = frappe.db.get_single_value("Fateh PWA Settings", field) or ""
+        default_payment_method = ""
+        if frappe.db.exists("DocType", "Fateh PWA Settings"):
+            default_payment_method = frappe.db.get_single_value("Fateh PWA Settings", "default_payment_method") or ""
         return {
             "status": "success",
             "data": {
                 "enable_tax_exclusive_rate": enable_tax_exclusive,
+                "default_payment_method": default_payment_method,
                 **print_formats,
             }
         }

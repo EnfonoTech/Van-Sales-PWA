@@ -5,6 +5,16 @@ app_description = "PWA for Sales"
 app_email = "ramees@enfono.com"
 app_license = "mit"
 
+fixtures = [
+    {
+        "doctype": "Custom Field",
+        "filters": [
+            ["dt", "=", "Sales Invoice"],
+            ["fieldname", "=", "custom_mode_of_payment"]
+        ]
+    }
+]
+
 # Serve the PWA SPA at /pwa; all sub-paths are handled by React Router client-side
 website_route_rules = [
     {"from_route": "/pwa/<path:subpath>", "to_route": "pwa"},
