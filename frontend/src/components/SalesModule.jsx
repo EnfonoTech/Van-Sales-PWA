@@ -357,8 +357,13 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
 
     const timeoutId = setTimeout(() => {
       if (!query) {
-        setLoadingSearch(false);
-        setSearchResults(getLocalMatches(''));
+        setLoadingSearch(true);
+        searchItems('', { limit: 50 })
+          .then(results => {
+            setSearchResults(results.length > 0 ? results : getLocalMatches(''));
+          })
+          .catch(() => setSearchResults(getLocalMatches('')))
+          .finally(() => setLoadingSearch(false));
         return;
       }
 
@@ -1570,11 +1575,15 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                         }
                       }}
                       onFocus={() => {
-                        if (!showResults) {
-                          setShowResults(true);
-                        }
+                        setShowResults(true);
                         if (!itemSearch.trim()) {
-                          setSearchResults(items.slice(0, 20));
+                          setLoadingSearch(true);
+                          searchItems('', { limit: 50 })
+                            .then(results => {
+                              setSearchResults(results.length > 0 ? results : items.slice(0, 20));
+                            })
+                            .catch(() => setSearchResults(items.slice(0, 20)))
+                            .finally(() => setLoadingSearch(false));
                         }
                       }}
                       placeholder="Type item code or name..."

@@ -413,6 +413,92 @@ def get_print_pdf(doctype=None, name=None):
     _get_print_pdf_with_token_or_auth()
 
 
+def _apply_item_group_permissions(filters):
+    """
+    Restrict items based on User Permissions for Item Group and Warehouse.
+
+    Rule:
+      allowed = (items in permitted item groups) UNION (items with stock in user's warehouses)
+
+    - If no Item Group permissions are set → no restriction (all items visible).
+    - If Item Group permissions exist, compute the full group subtree and fetch the
+      matching item codes.  Also check for Warehouse permissions; if present, add items
+      that have actual_qty > 0 in those warehouses even if they fall outside the permitted
+      item groups.  The final filter is name IN (union of both sets).
+
+    Mutates `filters` in place (replaces item_group key with a name IN filter).
+    Returns False when permissions are set but the combined allowed set is empty.
+    Returns True in all other cases (no restriction applied, or restriction applied).
+    """
+    from frappe.utils.nestedset import get_descendants_of
+
+    user_ig_permissions = frappe.get_all(
+        "User Permission",
+        filters={"user": frappe.session.user, "allow": "Item Group"},
+        pluck="for_value",
+    )
+    if not user_ig_permissions:
+        return True  # no item group restriction — show all items
+
+    # Expand each permitted group to its full subtree
+    permitted_groups = set(user_ig_permissions)
+    for ig in list(user_ig_permissions):
+        try:
+            permitted_groups.update(
+                get_descendants_of("Item Group", ig, ignore_permissions=True)
+            )
+        except Exception:
+            pass
+
+    # If caller also filtered by a specific item_group, intersect with permitted set
+    if filters.get("item_group"):
+        requested = filters.pop("item_group")
+        requested_set = {requested}
+        try:
+            requested_set.update(
+                get_descendants_of("Item Group", requested, ignore_permissions=True)
+            )
+        except Exception:
+            pass
+        final_groups = list(permitted_groups & requested_set)
+    else:
+        final_groups = list(permitted_groups)
+
+    # Fetch item codes that belong to the permitted groups
+    group_items = set()
+    if final_groups:
+        group_items = set(frappe.get_all(
+            "Item",
+            filters={"item_group": ["in", final_groups], "disabled": 0},
+            pluck="name",
+            ignore_permissions=True,
+        ))
+
+    # Also include items with actual stock in the user's permitted warehouses —
+    # these are always sellable even if outside the permitted item groups.
+    user_warehouses = frappe.get_all(
+        "User Permission",
+        filters={"user": frappe.session.user, "allow": "Warehouse"},
+        pluck="for_value",
+    )
+    warehouse_items = set()
+    if user_warehouses:
+        warehouse_items = set(frappe.get_all(
+            "Bin",
+            filters={"warehouse": ["in", user_warehouses], "actual_qty": [">", 0]},
+            pluck="item_code",
+            ignore_permissions=True,
+        ))
+
+    allowed_items = group_items | warehouse_items
+    if not allowed_items:
+        return False
+
+    filters["name"] = ["in", list(allowed_items)]
+    return True
+
+
+
 @frappe.whitelist(allow_guest=False, methods=["GET"])
 def get_items_list():
     """
@@ -427,6 +513,12 @@ def get_items_list():
         item_group = frappe.form_dict.get("item_group")
         if item_group:
             filters["item_group"] = item_group
+
+        # --- Item Group User Permission filtering ---
+        if not _apply_item_group_permissions(filters):
+            return {"status": "success", "count": 0, "total": 0,
+                    "limit": cint(frappe.form_dict.get("limit", 20)),
+                    "offset": cint(frappe.form_dict.get("offset", 0)), "data": []}
 
         is_stock_item = frappe.form_dict.get("is_stock_item")
         if is_stock_item is not None:
