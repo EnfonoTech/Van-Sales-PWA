@@ -2,12 +2,12 @@
   "name": "FATEH",
   "short_name": "FATEH",
   "description": "Complete field sales solution with customer management, invoicing, payments, and stock tracking",
-  "start_url": "/",
+  "start_url": "/pwa",
   "display": "standalone",
   "background_color": "#3b82f6",
   "theme_color": "#3b82f6",
   "orientation": "any",
-  "scope": "/",
+  "scope": "/pwa",
   "icons": [
     {
       "src": "/icon-72x72.png",
