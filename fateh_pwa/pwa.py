@@ -3465,6 +3465,7 @@ def update_sales_invoice():
             return {"status": "error", "message": f"Sales Invoice '{invoice_name}' not found"}
 
         doc = frappe.get_doc("Sales Invoice", invoice_name)
+        doc.flags.ignore_permissions = True
 
         if doc.docstatus != 0:
             return {
@@ -3728,6 +3729,11 @@ def submit_sales_invoice():
 
         if inv.docstatus == 2:
             return error("Invoice is cancelled", 409)
+
+        # Item Group User Permissions govern which items the user can add (get_items_list),
+        # not which invoices they can submit. Bypass doc-level permission checks so that
+        # invoices containing items from the warehouse-stock override path can be submitted.
+        inv.flags.ignore_permissions = True
 
         # Payment method optional: if missing, treat as Credit (submit only, no Payment Entry)
         payment_mode = (inv.get("custom_mode_of_payment") or "").strip() or None
@@ -6072,13 +6078,16 @@ def get_pwa_settings():
             for field in _PWA_PRINT_FORMAT_FIELDS.values():
                 print_formats[field] = frappe.db.get_single_value("Fateh PWA Settings", field) or ""
         default_payment_method = ""
+        default_customer = ""
         if frappe.db.exists("DocType", "Fateh PWA Settings"):
             default_payment_method = frappe.db.get_single_value("Fateh PWA Settings", "default_payment_method") or ""
+            default_customer = frappe.db.get_single_value("Fateh PWA Settings", "default_customer") or ""
         return {
             "status": "success",
             "data": {
                 "enable_tax_exclusive_rate": enable_tax_exclusive,
                 "default_payment_method": default_payment_method,
+                "default_customer": default_customer,
                 **print_formats,
             }
         }

@@ -45,6 +45,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
   const [taxExclusiveEnabled, setTaxExclusiveEnabled] = useState(false);
   const [pwaSettings, setPwaSettings] = useState({});
   const itemDropdownRef = useRef(null);
+  const defaultCustomerApplied = useRef(false);
   const [errorDialog, setErrorDialog] = useState({ isOpen: false, title: '', message: '' });
   const [confirmationDialog, setConfirmationDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null, onCancel: null });
   const [successDialog, setSuccessDialog] = useState({ isOpen: false, title: '', message: '' });
@@ -223,6 +224,21 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
       if (info && typeof info.rate === 'number') setTaxInfo(info);
     }).catch(() => {});
   }, []);
+
+  // Pre-select default customer from PWA Settings once customers are loaded
+  useEffect(() => {
+    if (defaultCustomerApplied.current) return;
+    if (!pwaSettings.default_customer) return;
+    if (!customers.length) return;
+    const found = customers.find(
+      c => c.id === pwaSettings.default_customer || c.name === pwaSettings.default_customer
+    );
+    if (found) {
+      setSelectedCustomer(found.id);
+      setCustomerSearch(found.custom_customer_name_english || found.name || found.id);
+      defaultCustomerApplied.current = true;
+    }
+  }, [customers, pwaSettings]);
 
   // Filter customers based on search query (only show dropdown when no customer selected)
   useEffect(() => {

@@ -5,6 +5,8 @@
  "engine": "InnoDB",
  "field_order": [
   "enable_tax_exclusive_rate",
+  "section_break_customer",
+  "default_customer",
   "section_break_payment",
   "default_payment_method",
   "column_break_payment",
@@ -22,6 +24,17 @@
    "fieldname": "enable_tax_exclusive_rate",
    "fieldtype": "Check",
    "label": "Enable Tax Exclusive Rate"
+  },
+  {
+   "fieldname": "section_break_customer",
+   "fieldtype": "Section Break",
+   "label": "Customer Settings"
+  },
+  {
+   "fieldname": "default_customer",
+   "fieldtype": "Link",
+   "label": "Default Customer",
+   "options": "Customer"
   },
   {
    "fieldname": "section_break_payment",
