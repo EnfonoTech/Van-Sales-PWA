@@ -280,7 +280,8 @@ function SalesOrderModule({ customers = [], items = [] }) {
           if (conv?.conversion_factor) initialPrice = priceListRate * conv.conversion_factor;
         }
         const isTaxExclusive = itemDetails?.tax_exclusive ? 1 : 0;
-        const taxExclusiveRate = isTaxExclusive ? (itemDetails?.tax_exclusive_rate || priceListRate) : 0;
+        // The fetched item price IS the exclusive rate for tax-exclusive items; item master field is a last-resort fallback.
+        const taxExclusiveRate = isTaxExclusive ? (initialPrice || itemDetails?.tax_exclusive_rate || 0) : 0;
         const inclusivePrice = isTaxExclusive ? taxExclusiveRate * (1 + taxInfo.rate / 100) : initialPrice;
         const newItem = {
           code: itemDetails?.code || code,
@@ -309,7 +310,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
           if (conv?.conversion_factor) initialPrice = basePrice * conv.conversion_factor;
         }
         const isTaxExclusiveFb = item.tax_exclusive ? 1 : 0;
-        const taxExclusiveRateFb = isTaxExclusiveFb ? (item.tax_exclusive_rate || basePrice) : 0;
+        const taxExclusiveRateFb = isTaxExclusiveFb ? (initialPrice || item.tax_exclusive_rate || 0) : 0;
         const inclusivePriceFb = isTaxExclusiveFb ? taxExclusiveRateFb * (1 + taxInfo.rate / 100) : initialPrice;
         setLineItems((prev) => [
           ...prev,
@@ -370,51 +371,25 @@ function SalesOrderModule({ customers = [], items = [] }) {
       prev.map((i) => {
         if (i.code !== code) return i;
         const priceListRate = i.price_list_rate ?? parseFloat(i.originalPrice) ?? parseFloat(i.price) ?? 0;
-        const currentPrice = parseFloat(i.price) || priceListRate;
-        const currentUOM = i.uom || i.stock_uom || '';
         const stockUOM = i.stock_uom || '';
         const uomConversions = i.uom_conversions || [];
-        
-        let newPrice = priceListRate; // Default: base price per stock_uom
-        
-        // If already at target UOM, keep current price
-        if (currentUOM === value) {
-          newPrice = currentPrice;
-        } else {
-          // Find conversion factors
-          const currentConv = uomConversions.find(conv => conv.uom === currentUOM);
+
+        // Always convert from the fixed base rate (never chain off the currently displayed
+        // price) so repeated UOM switching can't compound rounding drift.
+        // price_list_rate is always the exclusive/base rate per stock_uom.
+        let baseRate = priceListRate;
+        if (value !== stockUOM) {
           const targetConv = uomConversions.find(conv => conv.uom === value);
-          
-          // Convert via stock_uom (base UOM)
-          if (currentUOM === stockUOM) {
-            // Converting FROM stock_uom TO target UOM: multiply by conversion_factor
-            if (targetConv?.conversion_factor) {
-              newPrice = priceListRate * targetConv.conversion_factor;
-            } else {
-              newPrice = priceListRate; // No conversion factor, keep base price
-            }
-          } else if (value === stockUOM) {
-            // Converting FROM current UOM TO stock_uom: divide by conversion_factor
-            if (currentConv?.conversion_factor) {
-              newPrice = currentPrice / currentConv.conversion_factor;
-            } else {
-              newPrice = currentPrice; // No conversion factor, keep current price
-            }
-          } else {
-            // Converting BETWEEN two non-stock UOMs: convert via stock_uom
-            // First convert current price to stock_uom, then to target UOM
-            let stockPrice = currentPrice;
-            if (currentConv?.conversion_factor) {
-              stockPrice = currentPrice / currentConv.conversion_factor;
-            }
-            if (targetConv?.conversion_factor) {
-              newPrice = stockPrice * targetConv.conversion_factor;
-            } else {
-              newPrice = stockPrice;
-            }
+          if (targetConv?.conversion_factor) {
+            baseRate = priceListRate * targetConv.conversion_factor;
           }
         }
-        return { ...i, uom: value, price: to2(newPrice) };
+        if (i.tax_exclusive) {
+          const taxFraction = taxInfo.rate / 100;
+          const inclusive = baseRate * (1 + taxFraction);
+          return { ...i, uom: value, price: to2(inclusive), tax_exclusive_rate: Number(to2(baseRate)) };
+        }
+        return { ...i, uom: value, price: to2(baseRate) };
       })
     );
   };

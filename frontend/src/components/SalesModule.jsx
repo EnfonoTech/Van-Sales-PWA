@@ -469,18 +469,12 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         const roundPrice = (v) => (Math.round(Number(v) * 100) / 100).toFixed(2);
         const isTaxExclusive = itemDetails?.tax_exclusive ? 1 : 0;
         const taxFraction = taxInfo.rate / 100;
-        const isIncluded = !!taxInfo.included_in_print_rate;
-        // When included_in_print_rate: price list rate is already inclusive → extract exclusive rate
-        // When not included: price list rate is exclusive → compute inclusive price
+        // For tax-exclusive items, the fetched item price IS the exclusive rate; gross it up for display.
+        // Item master's tax_exclusive_rate is only a last-resort fallback when no price list rate exists.
         let taxExclusiveRate, inclusivePrice;
         if (isTaxExclusive) {
-          if (isIncluded) {
-            taxExclusiveRate = taxFraction > 0 ? initialPrice / (1 + taxFraction) : initialPrice;
-            inclusivePrice = initialPrice;
-          } else {
-            taxExclusiveRate = itemDetails?.tax_exclusive_rate || initialPrice;
-            inclusivePrice = taxExclusiveRate * (1 + taxFraction);
-          }
+          taxExclusiveRate = initialPrice || itemDetails?.tax_exclusive_rate || 0;
+          inclusivePrice = taxExclusiveRate * (1 + taxFraction);
         } else {
           taxExclusiveRate = 0;
           inclusivePrice = initialPrice;
@@ -522,16 +516,10 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         const roundPriceFallback = (v) => (Math.round(Number(v) * 100) / 100).toFixed(2);
         const isTaxExclusiveFallback = item.tax_exclusive ? 1 : 0;
         const taxFractionFallback = taxInfo.rate / 100;
-        const isIncludedFallback = !!taxInfo.included_in_print_rate;
         let taxExclusiveRateFallback, inclusivePriceFallback;
         if (isTaxExclusiveFallback) {
-          if (isIncludedFallback) {
-            taxExclusiveRateFallback = taxFractionFallback > 0 ? initialPrice / (1 + taxFractionFallback) : initialPrice;
-            inclusivePriceFallback = initialPrice;
-          } else {
-            taxExclusiveRateFallback = item.tax_exclusive_rate || initialPrice;
-            inclusivePriceFallback = taxExclusiveRateFallback * (1 + taxFractionFallback);
-          }
+          taxExclusiveRateFallback = initialPrice || item.tax_exclusive_rate || 0;
+          inclusivePriceFallback = taxExclusiveRateFallback * (1 + taxFractionFallback);
         } else {
           taxExclusiveRateFallback = 0;
           inclusivePriceFallback = initialPrice;
@@ -604,52 +592,30 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
     setInvoiceItems(invoiceItems.map(item => {
       if (item.code === code) {
         const priceListRate = item.price_list_rate || parseFloat(item.originalPrice) || parseFloat(item.price) || 0;
-        const currentPrice = parseFloat(item.price) || priceListRate;
-        const currentUOM = item.uom || item.stock_uom || '';
         const stockUOM = item.stock_uom || '';
         const uomConversions = item.uom_conversions || [];
-        
-        let newPrice = priceListRate; // Default: base price per stock_uom
-        
-        // If already at target UOM, keep current price
-        if (currentUOM === value) {
-          newPrice = currentPrice;
-        } else {
-          // Find conversion factors
-          const currentConv = uomConversions.find(conv => conv.uom === currentUOM);
+
+        // Always convert from the fixed base rate (never chain off the currently displayed
+        // price) so repeated UOM switching can't compound rounding drift.
+        // price_list_rate is always the exclusive/base rate per stock_uom.
+        let baseRate = priceListRate;
+        if (value !== stockUOM) {
           const targetConv = uomConversions.find(conv => conv.uom === value);
-          
-          // Convert via stock_uom (base UOM)
-          if (currentUOM === stockUOM) {
-            // Converting FROM stock_uom TO target UOM: multiply by conversion_factor
-            if (targetConv?.conversion_factor) {
-              newPrice = priceListRate * targetConv.conversion_factor;
-            } else {
-              newPrice = priceListRate; // No conversion factor, keep base price
-            }
-          } else if (value === stockUOM) {
-            // Converting FROM current UOM TO stock_uom: divide by conversion_factor
-            if (currentConv?.conversion_factor) {
-              newPrice = currentPrice / currentConv.conversion_factor;
-            } else {
-              newPrice = currentPrice; // No conversion factor, keep current price
-            }
-          } else {
-            // Converting BETWEEN two non-stock UOMs: convert via stock_uom
-            // First convert current price to stock_uom, then to target UOM
-            let stockPrice = currentPrice;
-            if (currentConv?.conversion_factor) {
-              stockPrice = currentPrice / currentConv.conversion_factor;
-            }
-            if (targetConv?.conversion_factor) {
-              newPrice = stockPrice * targetConv.conversion_factor;
-            } else {
-              newPrice = stockPrice;
-            }
+          if (targetConv?.conversion_factor) {
+            baseRate = priceListRate * targetConv.conversion_factor;
           }
         }
-        const rounded = (Math.round(Number(newPrice) * 100) / 100).toFixed(2);
-        return { ...item, uom: value, price: rounded };
+        if (item.tax_exclusive) {
+          const taxFraction = taxInfo.rate / 100;
+          const inclusive = baseRate * (1 + taxFraction);
+          return {
+            ...item,
+            uom: value,
+            price: (Math.round(inclusive * 100) / 100).toFixed(2),
+            tax_exclusive_rate: Number(baseRate.toFixed(2)),
+          };
+        }
+        return { ...item, uom: value, price: (Math.round(baseRate * 100) / 100).toFixed(2) };
       }
       return item;
     }));
