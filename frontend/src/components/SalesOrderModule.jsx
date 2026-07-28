@@ -339,12 +339,25 @@ function SalesOrderModule({ customers = [], items = [] }) {
   };
 
   const handleExclusiveRateChange = (code, value) => {
+    // Only sanitize while typing (allow digits and one decimal) - do NOT round so user can backspace and type freely
     const sanitized = sanitizeDecimalInput(value);
     setLineItems((prev) => prev.map((i) => {
       if (i.code !== code || !i.tax_exclusive) return i;
       const exclusiveRate = parseFloat(sanitized) || 0;
       const inclusiveRate = exclusiveRate * (1 + taxInfo.rate / 100);
-      return { ...i, tax_exclusive_rate: exclusiveRate, price: (Math.round(inclusiveRate * 100) / 100).toFixed(2) };
+      return { ...i, tax_exclusive_rate: sanitized, price: (Math.round(inclusiveRate * 100) / 100).toFixed(2) };
+    }));
+  };
+
+  const handleExclusiveRateBlur = (code) => {
+    // Round to 2 decimals when user leaves the field
+    setLineItems((prev) => prev.map((i) => {
+      if (i.code !== code) return i;
+      const r = i.tax_exclusive_rate;
+      if (r === '' || r == null) return { ...i, tax_exclusive_rate: '' };
+      const num = parseFloat(String(r).replace(/[^0-9.-]/g, ''));
+      if (Number.isNaN(num)) return { ...i, tax_exclusive_rate: '' };
+      return { ...i, tax_exclusive_rate: (Math.round(num * 100) / 100).toFixed(2) };
     }));
   };
 
@@ -986,6 +999,7 @@ function SalesOrderModule({ customers = [], items = [] }) {
         getQuantityValue={getQuantityValue}
         onUpdatePrice={handleUpdatePrice}
         onExclusiveRateChange={handleExclusiveRateChange}
+        onExclusiveRateBlur={handleExclusiveRateBlur}
         onUpdateQuantity={handleUpdateQuantity}
         onUpdateUOM={handleUpdateUOM}
         onPriceBlur={handlePriceBlur}

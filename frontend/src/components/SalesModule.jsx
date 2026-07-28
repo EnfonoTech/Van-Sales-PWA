@@ -34,7 +34,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
   const [editingInvoice, setEditingInvoice] = useState(null);
   const [showQuickCustomerForm, setShowQuickCustomerForm] = useState(false);
   const [quickCustomerFormData, setQuickCustomerFormData] = useState({
-    custom_customer_name_arabic: '',
+    customer_name: '',
     custom_vat_registration_number: ''
   });
   const [quickCustomerVatError, setQuickCustomerVatError] = useState('');
@@ -551,13 +551,26 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
   };
 
   const handleExclusiveRateChange = (code, value) => {
+    // Only sanitize while typing (allow digits and one decimal) - do NOT round so user can backspace and type freely
     const sanitized = sanitizeDecimalInput(value);
     setInvoiceItems(invoiceItems.map(item => {
       if (item.code !== code || !item.tax_exclusive) return item;
       const exclusiveRate = parseFloat(sanitized) || 0;
       const inclusiveRate = exclusiveRate * (1 + taxInfo.rate / 100);
       const rounded = (Math.round(inclusiveRate * 100) / 100).toFixed(2);
-      return { ...item, tax_exclusive_rate: exclusiveRate, price: rounded };
+      return { ...item, tax_exclusive_rate: sanitized, price: rounded };
+    }));
+  };
+
+  const handleExclusiveRateBlur = (code) => {
+    // Round to 2 decimals when user leaves the field
+    setInvoiceItems(invoiceItems.map(item => {
+      if (item.code !== code) return item;
+      const r = item.tax_exclusive_rate;
+      if (r === '' || r == null) return { ...item, tax_exclusive_rate: '' };
+      const num = parseFloat(String(r).replace(/[^0-9.-]/g, ''));
+      if (Number.isNaN(num)) return { ...item, tax_exclusive_rate: '' };
+      return { ...item, tax_exclusive_rate: (Math.round(num * 100) / 100).toFixed(2) };
     }));
   };
 
@@ -669,7 +682,7 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
       return;
     }
     
-    if (!quickCustomerFormData.custom_customer_name_arabic) {
+    if (!quickCustomerFormData.customer_name) {
       setErrorDialog({
         isOpen: true,
         title: 'Validation Error',
@@ -677,12 +690,11 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
       });
       return;
     }
-    
+
     setSubmittingQuickCustomer(true);
     try {
       const customerData = {
-        customer_name: quickCustomerFormData.custom_customer_name_arabic,
-        custom_customer_name_arabic: quickCustomerFormData.custom_customer_name_arabic,
+        customer_name: quickCustomerFormData.customer_name,
         custom_vat_registration_number: quickCustomerFormData.custom_vat_registration_number || ''
       };
       
@@ -713,9 +725,8 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
       const newCustomer = {
         id: result.name || result.id || result.customer_name || `CUST${String(customers.length + 1).padStart(3, '0')}`,
         name: result.customer_name || customerName,
-        custom_customer_name_english: customerData.customer_name || customerData.custom_customer_name_english,
-custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
-    customer_name: customerData.customer_name || customerData.custom_customer_name_arabic,
+        customer_name: customerData.customer_name,
+        custom_customer_name_english: customerData.customer_name,
         custom_vat_registration_number: customerData.custom_vat_registration_number,
         balance: 0
       };
@@ -727,7 +738,7 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
       
       // Reset form
       setQuickCustomerFormData({
-        custom_customer_name_arabic: '',
+        customer_name: '',
         custom_vat_registration_number: ''
       });
       setQuickCustomerVatError('');
@@ -1303,7 +1314,7 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                     className="btn btn-sm btn-secondary"
                     onClick={() => {
                       setShowQuickCustomerForm(false);
-                      setQuickCustomerFormData({ custom_customer_name_arabic: '', custom_vat_registration_number: '' });
+                      setQuickCustomerFormData({ customer_name: '', custom_vat_registration_number: '' });
                       setQuickCustomerVatError('');
                     }}
                   >
@@ -1316,9 +1327,9 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                       <label className="form-label">Customer Name *</label>
                       <input
                         type="text"
-                        name="customer_name_arabic"
+                        name="customer_name"
                         className="form-input"
-                        value={quickCustomerFormData.custom_customer_name_arabic}
+                        value={quickCustomerFormData.customer_name}
                         onChange={handleQuickCustomerChange}
                         required
                       />
@@ -1367,7 +1378,7 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                       className="btn btn-secondary"
                       onClick={() => {
                         setShowQuickCustomerForm(false);
-                        setQuickCustomerFormData({ custom_customer_name_arabic: '', custom_vat_registration_number: '' });
+                        setQuickCustomerFormData({ customer_name: '', custom_vat_registration_number: '' });
                         setQuickCustomerVatError('');
                       }}
                       disabled={submittingQuickCustomer}
@@ -1678,6 +1689,7 @@ custom_customer_name_arabic: customerData.custom_customer_name_arabic || '',
                                       className="form-input"
                                       value={item.tax_exclusive_rate ?? ''}
                                       onChange={(e) => handleExclusiveRateChange(item.code, e.target.value)}
+                                      onBlur={() => handleExclusiveRateBlur(item.code)}
                                       placeholder="0.00"
                                       style={{ width: '100px' }}
                                     />

@@ -39,6 +39,7 @@ export function TransactionFormLayout({
   getQuantityValue,
   onUpdatePrice,
   onExclusiveRateChange,
+  onExclusiveRateBlur,
   onUpdateQuantity,
   onUpdateUOM,
   onPriceBlur,
@@ -119,6 +120,7 @@ export function TransactionFormLayout({
                                 className="form-input"
                                 value={item.tax_exclusive_rate ?? ''}
                                 onChange={(e) => onExclusiveRateChange?.(item.code, e.target.value)}
+                                onBlur={() => onExclusiveRateBlur?.(item.code)}
                                 placeholder="0.00"
                                 style={{ width: '100px' }}
                               />
