@@ -3134,6 +3134,9 @@ def create_sales_invoice():
                 "description": item.get("description"),
                 "qty": flt(item.get("qty", 1)),
                 "rate": flt(item.get("rate", 0), 2),
+                # Keep price_list_rate == rate so ERPNext's calculate_margin() never sees
+                # rate > price_list_rate and auto-banks the gap as a permanent item margin.
+                "price_list_rate": flt(item.get("rate", 0), 2),
                 "uom": uom,
                 "stock_uom": stock_uom,
                 "conversion_factor": get_conversion_factor(item["item_code"], uom),
@@ -3567,6 +3570,9 @@ def update_sales_invoice():
                     "item_code": item.get("item_code"),
                     "qty": flt(item.get("qty", 1)),
                     "rate": flt(item.get("rate", 0), 2),
+                    # Keep price_list_rate == rate so ERPNext's calculate_margin() never sees
+                    # rate > price_list_rate and auto-banks the gap as a permanent item margin.
+                    "price_list_rate": flt(item.get("rate", 0), 2),
                     "uom": item.get("uom", "Nos"),
                     "income_account": company_doc.default_income_account,
                     "cost_center": update_cost_center,

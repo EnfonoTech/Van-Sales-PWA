@@ -45,6 +45,8 @@ export function TransactionDetailLayout({
   printDocName,
   /** Letterhead name (e.g. doc.letter_head) to pass to print URL. */
   printLetterhead,
+  /** Show the Excl. Rate column (only meaningful when items carry tax_exclusive/tax_exclusive_rate). */
+  taxExclusiveEnabled = false,
 }) {
   const [printing, setPrinting] = useState(false);
   const handlePrint = () => {
@@ -128,6 +130,7 @@ export function TransactionDetailLayout({
                   <th>Item Name</th>
                   <th>Qty</th>
                   <th>UOM</th>
+                  {taxExclusiveEnabled && <th>Excl. Rate</th>}
                   <th>Rate</th>
                   <th>Discount</th>
                   <th>Amount</th>
@@ -145,6 +148,13 @@ export function TransactionDetailLayout({
                       <td>{item.item_name || item.name || '—'}</td>
                       <td>{qty}</td>
                       <td>{item.uom || 'Nos'}</td>
+                      {taxExclusiveEnabled && (
+                        <td>
+                          {item.tax_exclusive
+                            ? <><SARSymbol size={16} /> {Number(item.tax_exclusive_rate || 0).toFixed(2)}</>
+                            : <span style={{ color: '#bbb' }}>—</span>}
+                        </td>
+                      )}
                       <td><SARSymbol size={16} /> {Number(rate).toFixed(2)}</td>
                       <td><SARSymbol size={16} /> {Number(disc).toFixed(2)}</td>
                       <td className="font-semibold"><SARSymbol size={16} /> {itemTotal.toFixed(2)}</td>
@@ -154,23 +164,23 @@ export function TransactionDetailLayout({
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan="5" className="text-right font-semibold">Subtotal:</td>
+                  <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right font-semibold">Subtotal:</td>
                   <td colSpan="2" className="font-semibold">
                     <SARSymbol size={16} /> {Number(subtotal ?? 0).toFixed(2)}
                   </td>
                 </tr>
                 {(discount ?? 0) > 0 && (
                   <tr>
-                    <td colSpan="5" className="text-right">Discount:</td>
+                    <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right">Discount:</td>
                     <td colSpan="2"><SARSymbol size={16} /> {Number(discount).toFixed(2)}</td>
                   </tr>
                 )}
                 <tr>
-                  <td colSpan="5" className="text-right">Tax (15%):</td>
+                  <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right">Tax (15%):</td>
                   <td colSpan="2"><SARSymbol size={16} /> {Number(tax ?? 0).toFixed(2)}</td>
                 </tr>
                 <tr style={{ borderTop: '2px solid var(--primary)' }}>
-                  <td colSpan="5" className="text-right font-bold" style={{ fontSize: '1.125rem' }}>TOTAL:</td>
+                  <td colSpan={taxExclusiveEnabled ? 6 : 5} className="text-right font-bold" style={{ fontSize: '1.125rem' }}>TOTAL:</td>
                   <td colSpan="2" className="font-bold" style={{ fontSize: '1.25rem', color: 'var(--primary)' }}>
                     <SARSymbol size={16} /> {Number(total ?? 0).toFixed(2)}
                   </td>

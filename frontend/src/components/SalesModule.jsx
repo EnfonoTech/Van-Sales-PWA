@@ -604,31 +604,34 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
   const handleUpdateUOM = (code, value) => {
     setInvoiceItems(invoiceItems.map(item => {
       if (item.code === code) {
-        const priceListRate = item.price_list_rate || parseFloat(item.originalPrice) || parseFloat(item.price) || 0;
         const stockUOM = item.stock_uom || '';
+        const currentUOM = item.uom || stockUOM || '';
         const uomConversions = item.uom_conversions || [];
+        const getFactor = (uom) => {
+          if (!uom || uom === stockUOM) return 1;
+          const conv = uomConversions.find(c => c.uom === uom);
+          return conv?.conversion_factor || 1;
+        };
+        const currentFactor = getFactor(currentUOM);
+        const targetFactor = getFactor(value);
 
-        // Always convert from the fixed base rate (never chain off the currently displayed
-        // price) so repeated UOM switching can't compound rounding drift.
-        // price_list_rate is always the exclusive/base rate per stock_uom.
-        let baseRate = priceListRate;
-        if (value !== stockUOM) {
-          const targetConv = uomConversions.find(conv => conv.uom === value);
-          if (targetConv?.conversion_factor) {
-            baseRate = priceListRate * targetConv.conversion_factor;
-          }
-        }
+        // Convert from the CURRENTLY displayed rate (which may be a manual edit, not just
+        // the price-list fetch) so a manual Rate/Excl. Rate edit survives a UOM switch.
         if (item.tax_exclusive) {
+          const currentExclRate = parseFloat(item.tax_exclusive_rate) || 0;
+          const newExclRate = (currentExclRate / currentFactor) * targetFactor;
           const taxFraction = taxInfo.rate / 100;
-          const inclusive = baseRate * (1 + taxFraction);
+          const inclusive = newExclRate * (1 + taxFraction);
           return {
             ...item,
             uom: value,
             price: (Math.round(inclusive * 100) / 100).toFixed(2),
-            tax_exclusive_rate: Number(baseRate.toFixed(2)),
+            tax_exclusive_rate: Number(newExclRate.toFixed(2)),
           };
         }
-        return { ...item, uom: value, price: (Math.round(baseRate * 100) / 100).toFixed(2) };
+        const currentPrice = parseFloat(item.price) || 0;
+        const newPrice = (currentPrice / currentFactor) * targetFactor;
+        return { ...item, uom: value, price: (Math.round(newPrice * 100) / 100).toFixed(2) };
       }
       return item;
     }));
@@ -839,7 +842,10 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         const itemCode = item.code || item.item_code;
         const currentPrice = item.price ?? item.rate ?? 0;
         const currentUOM = item.uom || item.sales_uom || item.stock_uom || '';
-        
+        const isTaxExclusive = !!item.tax_exclusive;
+        // The true per-line base is the exclusive rate for tax-exclusive items (currentPrice is tax-inclusive), the rate itself otherwise
+        const currentBase = isTaxExclusive ? (parseFloat(item.tax_exclusive_rate) || 0) : currentPrice;
+
         // Fetch item details to get uom_conversions and price_list_rate
         let itemDetails = null;
         try {
@@ -847,27 +853,27 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         } catch (error) {
           console.warn(`Failed to fetch details for item ${itemCode}:`, error);
         }
-        
+
         const stockUOM = itemDetails?.stock_uom || item.stock_uom || currentUOM;
         const uomConversions = itemDetails?.uom_conversions || item.uom_conversions || [];
-        
+
         // Get base price_list_rate from item details
-        let priceListRate = itemDetails?.item_prices?.[0]?.price_list_rate 
-          || itemDetails?.price_list_rate 
+        let priceListRate = itemDetails?.item_prices?.[0]?.price_list_rate
+          || itemDetails?.price_list_rate
           || item.price_list_rate;
-        
-        // If price_list_rate not found, reverse-convert current price to stock UOM
-        if (!priceListRate && currentUOM !== stockUOM && currentPrice) {
+
+        // If price_list_rate not found, reverse-convert the base rate to stock UOM
+        if (!priceListRate && currentUOM !== stockUOM && currentBase) {
           const currentConv = uomConversions.find(conv => conv.uom === currentUOM);
           if (currentConv?.conversion_factor) {
-            priceListRate = currentPrice / currentConv.conversion_factor;
+            priceListRate = currentBase / currentConv.conversion_factor;
           } else {
-            priceListRate = currentPrice; // Fallback if no conversion factor
+            priceListRate = currentBase; // Fallback if no conversion factor
           }
         } else if (!priceListRate) {
-          priceListRate = currentPrice; // Use current price as fallback
+          priceListRate = currentBase; // Use current base rate as fallback
         }
-        
+
         return {
           code: itemCode,
           name: item.name || item.item_name,
@@ -879,7 +885,9 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
           uom_conversions: uomConversions,
           stock: item.stock ?? 0,
           quantity: (item.quantity ?? item.qty ?? 1).toString(),
-          originalPrice: Number(to2(priceListRate)) // Store original price_list_rate
+          originalPrice: Number(to2(priceListRate)), // Store original price_list_rate
+          tax_exclusive: isTaxExclusive ? 1 : 0,
+          tax_exclusive_rate: isTaxExclusive ? Number(to2(item.tax_exclusive_rate || 0)) : 0,
         };
       }));
 

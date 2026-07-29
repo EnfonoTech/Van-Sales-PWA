@@ -116,6 +116,31 @@ function QuotationModule({ customers = [], items = [] }) {
   const to2 = (v) => (Math.round(Number(v) * 100) / 100).toFixed(2);
   const round2 = (v) => Math.round(Number(v) * 100) / 100;
 
+  // Quotation Item has no tax_exclusive/tax_exclusive_rate columns, so the view screen can't
+  // read it off the saved doc. Derive it the same way the edit form does: check the Item
+  // master (via getItemDetails) and reverse tax out of the saved rate for the Excl. Rate display.
+  const enrichQuotationItemsForDisplay = async (detail) => {
+    if (!detail || !Array.isArray(detail.items) || !detail.items.length) return detail;
+    const customerName = detail.quotation_to === 'Customer'
+      ? (detail.party_name || detail.customer_name || null)
+      : null;
+    const taxFraction = taxInfo.rate / 100;
+    const enrichedItems = await Promise.all(detail.items.map(async (item) => {
+      const itemCode = item.item_code || item.code;
+      let itemDetails = null;
+      try {
+        itemDetails = await getItemDetails(itemCode, customerName);
+      } catch (e) {
+        console.warn(`Failed to fetch details for item ${itemCode}:`, e);
+      }
+      if (!itemDetails?.tax_exclusive) return item;
+      const rate = item.rate ?? item.price ?? 0;
+      const taxExclusiveRate = taxFraction > 0 ? rate / (1 + taxFraction) : rate;
+      return { ...item, tax_exclusive: 1, tax_exclusive_rate: taxExclusiveRate };
+    }));
+    return { ...detail, items: enrichedItems };
+  };
+
   const calculateSubtotal = () =>
     lineItems.reduce((sum, item) => sum + getPriceValue(item.price) * getQuantityValue(item.quantity), 0);
   const calculateDiscount = () => getDiscountValue(discountAmount);
@@ -173,7 +198,10 @@ function QuotationModule({ customers = [], items = [] }) {
         .then((result) => {
           const doc = result.quotation || result;
           setSelectedQuotation({ name: nameParam });
-          setQuotationDetail(doc);
+          return enrichQuotationItemsForDisplay(doc);
+        })
+        .then((enrichedDoc) => {
+          setQuotationDetail(enrichedDoc);
           setView('detail');
         })
         .catch(() => {
@@ -432,26 +460,29 @@ function QuotationModule({ customers = [], items = [] }) {
     setLineItems((prev) =>
       prev.map((i) => {
         if (i.code !== code) return i;
-        const priceListRate = i.price_list_rate ?? parseFloat(i.originalPrice) ?? parseFloat(i.price) ?? 0;
         const stockUOM = i.stock_uom || '';
+        const currentUOM = i.uom || stockUOM || '';
         const uomConversions = i.uom_conversions || [];
+        const getFactor = (uom) => {
+          if (!uom || uom === stockUOM) return 1;
+          const conv = uomConversions.find(c => c.uom === uom);
+          return conv?.conversion_factor || 1;
+        };
+        const currentFactor = getFactor(currentUOM);
+        const targetFactor = getFactor(value);
 
-        // Always convert from the fixed base rate (never chain off the currently displayed
-        // price) so repeated UOM switching can't compound rounding drift.
-        // price_list_rate is always the exclusive/base rate per stock_uom.
-        let baseRate = priceListRate;
-        if (value !== stockUOM) {
-          const targetConv = uomConversions.find(conv => conv.uom === value);
-          if (targetConv?.conversion_factor) {
-            baseRate = priceListRate * targetConv.conversion_factor;
-          }
-        }
+        // Convert from the CURRENTLY displayed rate (which may be a manual edit, not just
+        // the price-list fetch) so a manual Rate/Excl. Rate edit survives a UOM switch.
         if (i.tax_exclusive) {
+          const currentExclRate = parseFloat(i.tax_exclusive_rate) || 0;
+          const newExclRate = (currentExclRate / currentFactor) * targetFactor;
           const taxFraction = taxInfo.rate / 100;
-          const inclusive = baseRate * (1 + taxFraction);
-          return { ...i, uom: value, price: to2(inclusive), tax_exclusive_rate: Number(to2(baseRate)) };
+          const inclusive = newExclRate * (1 + taxFraction);
+          return { ...i, uom: value, price: to2(inclusive), tax_exclusive_rate: Number(to2(newExclRate)) };
         }
-        return { ...i, uom: value, price: to2(baseRate) };
+        const currentPrice = parseFloat(i.price) || 0;
+        const newPrice = (currentPrice / currentFactor) * targetFactor;
+        return { ...i, uom: value, price: to2(newPrice) };
       })
     );
   };
@@ -465,7 +496,7 @@ function QuotationModule({ customers = [], items = [] }) {
     setQuotationDetail(null);
     try {
       const detail = await getQuotationDetails(q.name);
-      setQuotationDetail(detail);
+      setQuotationDetail(await enrichQuotationItemsForDisplay(detail));
     } catch {
       setQuotationDetail(null);
     } finally {
@@ -480,7 +511,7 @@ function QuotationModule({ customers = [], items = [] }) {
     setSubmittingQuotation(true);
     try {
       await submitQuotation(doc.name);
-      const updated = await getQuotationDetails(doc.name);
+      const updated = await enrichQuotationItemsForDisplay(await getQuotationDetails(doc.name));
       setQuotationDetail(updated);
       setSelectedQuotation(updated);
     } catch (err) {
@@ -537,7 +568,7 @@ function QuotationModule({ customers = [], items = [] }) {
         const itemCode = item.item_code || item.code;
         const currentPrice = item.rate ?? item.price ?? 0;
         const currentUOM = item.uom || item.sales_uom || item.stock_uom || '';
-        
+
         // Fetch item details to get uom_conversions and price_list_rate
         let itemDetails = null;
         try {
@@ -545,27 +576,37 @@ function QuotationModule({ customers = [], items = [] }) {
         } catch (error) {
           console.warn(`Failed to fetch details for item ${itemCode}:`, error);
         }
-        
+
+        // Quotation Item has no tax_exclusive/tax_exclusive_rate columns to persist this on,
+        // so determine it the same way the "new" form does: from the Item master (via
+        // getItemDetails), and derive the exclusive rate by reversing tax out of the saved rate.
+        const isTaxExclusive = !!itemDetails?.tax_exclusive;
+        const taxFraction = taxInfo.rate / 100;
+        const taxExclusiveRate = isTaxExclusive
+          ? (taxFraction > 0 ? currentPrice / (1 + taxFraction) : currentPrice)
+          : 0;
+        const currentBase = isTaxExclusive ? taxExclusiveRate : currentPrice;
+
         const stockUOM = itemDetails?.stock_uom || item.stock_uom || currentUOM;
         const uomConversions = itemDetails?.uom_conversions || item.uom_conversions || [];
-        
+
         // Get base price_list_rate from item details
-        let priceListRate = itemDetails?.item_prices?.[0]?.price_list_rate 
-          || itemDetails?.price_list_rate 
+        let priceListRate = itemDetails?.item_prices?.[0]?.price_list_rate
+          || itemDetails?.price_list_rate
           || item.price_list_rate;
-        
-        // If price_list_rate not found, reverse-convert current price to stock UOM
-        if (!priceListRate && currentUOM !== stockUOM && currentPrice) {
+
+        // If price_list_rate not found, reverse-convert the base rate to stock UOM
+        if (!priceListRate && currentUOM !== stockUOM && currentBase) {
           const currentConv = uomConversions.find(conv => conv.uom === currentUOM);
           if (currentConv?.conversion_factor) {
-            priceListRate = currentPrice / currentConv.conversion_factor;
+            priceListRate = currentBase / currentConv.conversion_factor;
           } else {
-            priceListRate = currentPrice; // Fallback if no conversion factor
+            priceListRate = currentBase; // Fallback if no conversion factor
           }
         } else if (!priceListRate) {
-          priceListRate = currentPrice; // Use current price as fallback
+          priceListRate = currentBase; // Use current base rate as fallback
         }
-        
+
         return {
           code: itemCode,
           name: item.item_name || item.name,
@@ -576,10 +617,12 @@ function QuotationModule({ customers = [], items = [] }) {
           sales_uom: itemDetails?.sales_uom || itemDetails?.stock_uom || item.sales_uom || item.stock_uom || stockUOM,
           uom_conversions: uomConversions,
           quantity: (item.qty || item.quantity || 1).toString(),
-          originalPrice: Number(to2(priceListRate)) // Store original price_list_rate
+          originalPrice: Number(to2(priceListRate)), // Store original price_list_rate
+          tax_exclusive: isTaxExclusive ? 1 : 0,
+          tax_exclusive_rate: isTaxExclusive ? Number(to2(taxExclusiveRate)) : 0,
         };
       }));
-      
+
       // Set party selection
       setQuotationTo(quotationDoc.quotation_to || 'Customer');
       if (quotationDoc.quotation_to === 'Customer') {
@@ -597,10 +640,10 @@ function QuotationModule({ customers = [], items = [] }) {
         setPartySearch(quotationDoc.party_name || '');
         setSelectedCustomer('');
       }
-      
+
       setLineItems(itemsForForm);
       setDiscountAmount((quotationDoc.discount_amount || 0).toString());
-      
+
       setEditingQuotation(doc.name);
       setView('create');
     } catch (error) {
@@ -669,7 +712,7 @@ function QuotationModule({ customers = [], items = [] }) {
     setCancellingQuotation(true);
     try {
       await cancelQuotation(doc.name);
-      const updated = await getQuotationDetails(doc.name);
+      const updated = await enrichQuotationItemsForDisplay(await getQuotationDetails(doc.name));
       setQuotationDetail(updated);
       setSelectedQuotation(updated);
     } catch (err) {
@@ -710,14 +753,23 @@ function QuotationModule({ customers = [], items = [] }) {
         } catch (e) {
           console.warn(`Failed to fetch details for item ${itemCode}:`, e);
         }
+        // Quotation Item has no tax_exclusive/tax_exclusive_rate columns to persist this on,
+        // so determine it the same way the "new" form does: from the Item master (via
+        // getItemDetails), and derive the exclusive rate by reversing tax out of the saved rate.
+        const isTaxExclusive = !!itemDetails?.tax_exclusive;
+        const taxFraction = taxInfo.rate / 100;
+        const taxExclusiveRate = isTaxExclusive
+          ? (taxFraction > 0 ? currentPrice / (1 + taxFraction) : currentPrice)
+          : 0;
+        const currentBase = isTaxExclusive ? taxExclusiveRate : currentPrice;
         const stockUOM = itemDetails?.stock_uom || item.stock_uom || currentUOM;
         const uomConversions = itemDetails?.uom_conversions || item.uom_conversions || [];
         let priceListRate = itemDetails?.item_prices?.[0]?.price_list_rate || itemDetails?.price_list_rate || item.price_list_rate;
-        if (!priceListRate && currentUOM !== stockUOM && currentPrice) {
+        if (!priceListRate && currentUOM !== stockUOM && currentBase) {
           const currentConv = uomConversions.find(conv => conv.uom === currentUOM);
-          priceListRate = currentConv?.conversion_factor ? currentPrice / currentConv.conversion_factor : currentPrice;
+          priceListRate = currentConv?.conversion_factor ? currentBase / currentConv.conversion_factor : currentBase;
         } else if (!priceListRate) {
-          priceListRate = currentPrice;
+          priceListRate = currentBase;
         }
         return {
           code: itemCode,
@@ -730,6 +782,8 @@ function QuotationModule({ customers = [], items = [] }) {
           uom_conversions: uomConversions,
           quantity: (item.qty || item.quantity || 1).toString(),
           originalPrice: Number(to2(priceListRate)),
+          tax_exclusive: isTaxExclusive ? 1 : 0,
+          tax_exclusive_rate: isTaxExclusive ? Number(to2(taxExclusiveRate)) : 0,
         };
       }));
       setQuotationTo(quotationDoc.quotation_to || 'Customer');
@@ -925,7 +979,7 @@ function QuotationModule({ customers = [], items = [] }) {
       
       if (quotationName) {
         // Fetch details and show detail view so user can submit and print
-        const detail = await getQuotationDetails(quotationName);
+        const detail = await enrichQuotationItemsForDisplay(await getQuotationDetails(quotationName));
         setSelectedQuotation({ name: quotationName });
         setQuotationDetail(detail);
         setView('detail');
@@ -1141,6 +1195,7 @@ function QuotationModule({ customers = [], items = [] }) {
         printDoctype="Quotation"
         printDocName={doc?.name}
         printLetterhead={doc?.letter_head}
+        taxExclusiveEnabled={taxExclusiveEnabled}
       />
       {errorDialogElement}
       {confirmationDialogElement}
