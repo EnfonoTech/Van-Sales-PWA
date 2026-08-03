@@ -2434,14 +2434,17 @@ def create_quotation():
                 "item_code": row.get("item_code"),
                 "qty": flt(row.get("qty"), 1),
                 "rate": flt(row.get("rate"), 2),
+                # Keep price_list_rate == rate so ERPNext's calculate_margin() never sees
+                # rate > price_list_rate and auto-banks the gap as a permanent item margin.
+                "price_list_rate": flt(row.get("rate"), 2),
                 "uom": row.get("uom") or frappe.db.get_value("Item", row.get("item_code"), "stock_uom") or "Nos",
             })
-        
+
         # Add taxes
         doc.taxes_and_charges = tax_template
         for tax_row in tax_rows:
             doc.append("taxes", tax_row)
-        
+
         doc.set_missing_values()
         doc.run_method("set_taxes")
         doc.run_method("calculate_totals")
@@ -2651,14 +2654,17 @@ def create_sales_order():
                 "item_code": row.get("item_code"),
                 "qty": flt(row.get("qty"), 1),
                 "rate": flt(row.get("rate"), 2),
+                # Keep price_list_rate == rate so ERPNext's calculate_margin() never sees
+                # rate > price_list_rate and auto-banks the gap as a permanent item margin.
+                "price_list_rate": flt(row.get("rate"), 2),
                 "uom": row.get("uom") or frappe.db.get_value("Item", row.get("item_code"), "stock_uom") or "Nos",
             })
-        
+
         # Add taxes
         doc.taxes_and_charges = tax_template
         for tax_row in tax_rows:
             doc.append("taxes", tax_row)
-        
+
         # Add sales person to sales_team with 100% contribution
         sales_person = _get_user_sales_person()
         if sales_person:
@@ -2827,6 +2833,9 @@ def update_quotation():
                     "item_code": item.get("item_code"),
                     "qty": flt(item.get("qty", 1)),
                     "rate": flt(item.get("rate", 0), 2),
+                    # Keep price_list_rate == rate so ERPNext's calculate_margin() never sees
+                    # rate > price_list_rate and auto-banks the gap as a permanent item margin.
+                    "price_list_rate": flt(item.get("rate", 0), 2),
                     "uom": item.get("uom", "Nos"),
                 }
                 if _q_has_tex:
@@ -2896,6 +2905,9 @@ def update_sales_order():
                     "item_code": item.get("item_code"),
                     "qty": flt(item.get("qty", 1)),
                     "rate": flt(item.get("rate", 0), 2),
+                    # Keep price_list_rate == rate so ERPNext's calculate_margin() never sees
+                    # rate > price_list_rate and auto-banks the gap as a permanent item margin.
+                    "price_list_rate": flt(item.get("rate", 0), 2),
                     "uom": item.get("uom", "Nos"),
                 }
                 if _so_has_tex:
