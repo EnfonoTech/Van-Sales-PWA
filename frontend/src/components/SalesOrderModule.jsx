@@ -211,7 +211,8 @@ function SalesOrderModule({ customers = [], items = [] }) {
           (c.name || '').toLowerCase().includes(customerSearch.toLowerCase()) ||
           (c.custom_customer_name_english || '').toLowerCase().includes(customerSearch.toLowerCase()) ||
           (c.mobile || '').toLowerCase().includes(customerSearch.toLowerCase()) ||
-          (c.email || '').toLowerCase().includes(customerSearch.toLowerCase())
+          (c.email || '').toLowerCase().includes(customerSearch.toLowerCase()) ||
+          (c.custom_vat_registration_number || '').toLowerCase().includes(customerSearch.toLowerCase())
       );
       setFilteredCustomers(filtered);
       if (!selectedCustomer) setShowCustomerResults(true);
@@ -941,6 +942,8 @@ function SalesOrderModule({ customers = [], items = [] }) {
               >
                 <div style={{ fontWeight: 600 }}>{c.custom_customer_name_english || c.name}</div>
                 {c.custom_customer_name_arabic && <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)' }}>{c.custom_customer_name_arabic}</div>}
+                {c.custom_vat_registration_number && <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)' }}>VAT: {c.custom_vat_registration_number}</div>}
+                {c.mobile && <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)' }}>📱 {c.mobile}</div>}
               </div>
             ))}
           </div>
@@ -950,6 +953,8 @@ function SalesOrderModule({ customers = [], items = [] }) {
             <div style={{ padding: '1rem', background: 'var(--gray-50)', borderRadius: 'var(--radius-lg)', marginTop: '1rem' }}>
               <div className="font-semibold">{customer.custom_customer_name_english || customer.name}</div>
               {customer.custom_customer_name_arabic && <div className="text-xs text-gray-500 mt-1">{customer.custom_customer_name_arabic}</div>}
+              {customer.custom_vat_registration_number && <div className="text-xs text-gray-500 mt-1">VAT: {customer.custom_vat_registration_number}</div>}
+              {customer.mobile && <div className="text-xs text-gray-500 mt-1">📱 {customer.mobile}</div>}
             </div>
             <div className="form-group mt-4">
               <label className="form-label">Delivery Date *</label>

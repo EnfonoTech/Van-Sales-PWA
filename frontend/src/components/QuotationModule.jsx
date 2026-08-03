@@ -247,7 +247,8 @@ function QuotationModule({ customers = [], items = [] }) {
             (c.name || '').toLowerCase().includes(partySearch.toLowerCase()) ||
             (c.custom_customer_name_english || '').toLowerCase().includes(partySearch.toLowerCase()) ||
             (c.mobile || '').toLowerCase().includes(partySearch.toLowerCase()) ||
-            (c.email || '').toLowerCase().includes(partySearch.toLowerCase())
+            (c.email || '').toLowerCase().includes(partySearch.toLowerCase()) ||
+            (c.custom_vat_registration_number || '').toLowerCase().includes(partySearch.toLowerCase())
         );
         setFilteredCustomers(filtered);
         setShowPartyResults(true);
@@ -1382,6 +1383,8 @@ function QuotationModule({ customers = [], items = [] }) {
                   >
                     <div style={{ fontWeight: 600 }}>{c.custom_customer_name_english || c.name}</div>
                     {c.custom_customer_name_arabic && <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)' }}>{c.custom_customer_name_arabic}</div>}
+                    {c.custom_vat_registration_number && <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)' }}>VAT: {c.custom_vat_registration_number}</div>}
+                    {c.mobile && <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)' }}>📱 {c.mobile}</div>}
                   </div>
                 ))
               : (filteredLeads.length ? filteredLeads : leads.slice(0, 10)).map((l) => (
@@ -1411,6 +1414,8 @@ function QuotationModule({ customers = [], items = [] }) {
                   <>
                     <div className="font-semibold">{customer.custom_customer_name_english || customer.name}</div>
                     {customer.custom_customer_name_arabic && <div className="text-xs text-gray-500 mt-1">{customer.custom_customer_name_arabic}</div>}
+                    {customer.custom_vat_registration_number && <div className="text-xs text-gray-500 mt-1">VAT: {customer.custom_vat_registration_number}</div>}
+                    {customer.mobile && <div className="text-xs text-gray-500 mt-1">📱 {customer.mobile}</div>}
                   </>
                 ) : null;
               })()

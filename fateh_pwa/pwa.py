@@ -1533,6 +1533,9 @@ def get_customers_list():
                 "territory",
                 "custom_vat_registration_number",
                 "custom_cr_number",
+                "mobile_no",
+                "email_id",
+                "customer_primary_contact",
                 "disabled",
                 "creation",
                 "modified"
@@ -1552,6 +1555,32 @@ def get_customers_list():
                 pluck="reference_name",
             )
         )
+
+        # -------------------------------------------------
+        # MOBILE FALLBACK: mobile_no is fetched from customer_primary_contact only.
+        # If no primary contact is set, fall back to any Contact linked to this
+        # customer (via Dynamic Link) instead of leaving mobile blank.
+        # -------------------------------------------------
+        missing_mobile_customers = [c["name"] for c in customers if not c.get("mobile_no")]
+        contact_mobile_map = {}
+        if missing_mobile_customers:
+            contact_rows = frappe.db.sql(
+                """
+                SELECT dl.link_name AS customer, c.mobile_no, c.phone
+                FROM `tabDynamic Link` dl
+                INNER JOIN `tabContact` c ON c.name = dl.parent
+                WHERE dl.link_doctype = 'Customer'
+                  AND dl.parenttype = 'Contact'
+                  AND dl.link_name IN %(customers)s
+                  AND (COALESCE(c.mobile_no, '') != '' OR COALESCE(c.phone, '') != '')
+                ORDER BY c.modified DESC
+                """,
+                {"customers": missing_mobile_customers},
+                as_dict=True,
+            )
+            for row in contact_rows:
+                if row["customer"] not in contact_mobile_map:
+                    contact_mobile_map[row["customer"]] = row.get("mobile_no") or row.get("phone")
 
         result = []
 
@@ -1576,6 +1605,9 @@ def get_customers_list():
 
             if not include_customer:
                 continue
+
+            if not cust.get("mobile_no"):
+                cust["mobile_no"] = contact_mobile_map.get(cust["name"], "")
 
             # -------------------------
             # OUTSTANDING (USER-CREATED ONLY)

@@ -721,6 +721,10 @@ function CustomerModule({ customers, sales, payments, onAddCustomer, loadingCust
               <div className="text-xs text-gray-600 mb-1">Territory</div>
               <div className="font-semibold">{selectedCustomer.territory || '—'}</div>
             </div>
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <div className="text-xs text-gray-600 mb-1">Mobile Number</div>
+              <div className="font-semibold">{selectedCustomer.mobile || '—'}</div>
+            </div>
           </div>
           <div className="grid grid-3 gap-4">
             <div className="p-4 bg-gray-50 rounded-lg">

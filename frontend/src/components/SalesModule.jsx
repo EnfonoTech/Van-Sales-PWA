@@ -247,7 +247,8 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
         customer.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
         customer.custom_customer_name_english?.toLowerCase().includes(customerSearch.toLowerCase()) ||
         customer.mobile?.toLowerCase().includes(customerSearch.toLowerCase()) ||
-        customer.email?.toLowerCase().includes(customerSearch.toLowerCase())
+        customer.email?.toLowerCase().includes(customerSearch.toLowerCase()) ||
+        customer.custom_vat_registration_number?.toLowerCase().includes(customerSearch.toLowerCase())
       );
       setFilteredCustomers(filtered);
       setShowCustomerResults(true);
@@ -1486,6 +1487,16 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                               ✉️ {customer.email}
                             </div>
                           )}
+                          {customer.mobile && (
+                            <div style={{ fontSize: '0.875rem', color: 'var(--gray-600)' }}>
+                              📱 {customer.mobile}
+                            </div>
+                          )}
+                          {customer.custom_vat_registration_number && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)' }}>
+                              VAT: {customer.custom_vat_registration_number}
+                            </div>
+                          )}
                         </div>
                       ))
                     ) : customerSearch ? (
@@ -1524,6 +1535,16 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                             ✉️ {customer.email}
                           </div>
                         )}
+                        {customer.mobile && (
+                          <div style={{ fontSize: '0.875rem', color: 'var(--gray-600)' }}>
+                            📱 {customer.mobile}
+                          </div>
+                        )}
+                        {customer.custom_vat_registration_number && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--gray-500)' }}>
+                            VAT: {customer.custom_vat_registration_number}
+                          </div>
+                        )}
                         </div>
                       ))
                     ) : null}
@@ -1551,6 +1572,10 @@ function SalesModule({ customers, items, sales, onAddSale, onAddCustomer, loadin
                     <div>
                       <div className="text-xs text-gray-600 mb-1">VAT Number</div>
                       <div className="font-semibold">{customer.custom_vat_registration_number || '—'}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-600 mb-1">Mobile Number</div>
+                      <div className="font-semibold">{customer.mobile || '—'}</div>
                     </div>
                   </div>
                 </div>
