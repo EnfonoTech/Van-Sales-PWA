@@ -1142,8 +1142,6 @@ export const openPrintPdf = (doctype, name, letterhead, printFormat) => {
     doctype,
     name,
     no_letterhead: '0',
-    download: '1',
-    trigger_print: '1',
   });
   if (letterhead && String(letterhead).trim()) {
     params.set('letterhead', String(letterhead).trim());
@@ -1152,7 +1150,25 @@ export const openPrintPdf = (doctype, name, letterhead, printFormat) => {
     params.set('format', String(printFormat).trim());
   }
   const printUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/printview?${params.toString()}`;
-  window.open(printUrl, '_blank', 'noopener');
+  // Deliberately NOT using Frappe's own trigger_print=1: that script calls window.print()
+  // then force-closes the tab after a fixed 5s timeout regardless of whether printing
+  // actually finished. On a Bluetooth thermal printer, the OS hand-off to the print-bridge
+  // app can easily take longer than that, so the tab gets killed mid-print. We trigger
+  // print ourselves instead and never auto-close the tab - the user closes it when done.
+  const printWindow = window.open(printUrl, '_blank');
+  if (printWindow) {
+    // Rely solely on the 'load' event for the real navigation - checking
+    // document.readyState here is unreliable because a freshly opened window's
+    // initial about:blank placeholder can already report 'complete' before it
+    // has navigated to printUrl, which would trigger print on the blank page.
+    printWindow.addEventListener('load', () => {
+      try {
+        printWindow.print();
+      } catch (e) {
+        // Window may already be closed by the user; nothing to do.
+      }
+    });
+  }
   return Promise.resolve();
 };
 
